@@ -1,0 +1,13 @@
+node_modules/
+.expo/
+dist/
+android/app/build/
+android/.gradle/
+android/build/
+ios/build/
+ios/Pods/
+ios/*.xcworkspace/xcuserdata/
+ios/*.xcodeproj/xcuserdata/
+.env
+!.env.example
+*.log

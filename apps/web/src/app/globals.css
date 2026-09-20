@@ -1,0 +1,136 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Soft-Skill Warm Cream & Sage Palette */
+    --background: 40 25% 97%; /* #F7F4EF Warm Cream */
+    --foreground: 217 33% 17%; /* #1E293B Slate Charcoal */
+    --card: 0 0% 100%;
+    --card-foreground: 217 33% 17%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 217 33% 17%;
+    
+    /* Sage Green & Muted Slate Accents */
+    --primary: 102 22% 48%; /* #6F8863 Deepened Soft Sage */
+    --primary-foreground: 40 25% 97%;
+    --secondary: 208 16% 92%; /* Light Muted Slate */
+    --secondary-foreground: 217 33% 17%;
+    --muted: 40 15% 92%;
+    --muted-foreground: 208 14% 45%; /* #778A9B */
+    --accent: 102 22% 88%; /* #A3B899 Soft Sage Tint */
+    --accent-foreground: 217 33% 17%;
+    --destructive: 12 75% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 40 15% 86%;
+    --input: 40 15% 86%;
+    --ring: 102 22% 48%;
+    --radius: 1rem;
+  }
+
+  .dark {
+    --background: 222 30% 9%; /* Deep Dark Slate */
+    --foreground: 40 25% 95%; /* Soft Cream White */
+    --card: 222 25% 12%;
+    --card-foreground: 40 25% 95%;
+    --popover: 222 25% 12%;
+    --popover-foreground: 40 25% 95%;
+    --primary: 102 26% 65%; /* #A3B899 Luminous Sage */
+    --primary-foreground: 222 30% 9%;
+    --secondary: 217 18% 18%;
+    --secondary-foreground: 40 25% 95%;
+    --muted: 217 18% 18%;
+    --muted-foreground: 208 16% 65%; /* #778A9B Slate */
+    --accent: 217 18% 22%;
+    --accent-foreground: 40 25% 95%;
+    --destructive: 0 62.8% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 217 18% 20%;
+    --input: 217 18% 20%;
+    --ring: 102 26% 65%;
+  }
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-feature-settings: "rlig" 1, "calt" 1;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Fluid Aurora Animations for Organic Mesh Gradient */
+@keyframes aurora-float-1 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(60px, -40px) scale(1.12);
+  }
+  66% {
+    transform: translate(-40px, 50px) scale(0.92);
+  }
+}
+
+@keyframes aurora-float-2 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  33% {
+    transform: translate(-70px, 50px) scale(1.08);
+  }
+  66% {
+    transform: translate(50px, -30px) scale(0.95);
+  }
+}
+
+@keyframes aurora-float-3 {
+  0%, 100% {
+    transform: translate(0px, 0px) scale(1);
+  }
+  50% {
+    transform: translate(40px, 60px) scale(1.15);
+  }
+}
+
+.animate-aurora-1 {
+  animation: aurora-float-1 22s ease-in-out infinite;
+}
+
+.animate-aurora-2 {
+  animation: aurora-float-2 26s ease-in-out infinite;
+}
+
+.animate-aurora-3 {
+  animation: aurora-float-3 20s ease-in-out infinite;
+}
+
+/* Glassmorphism Panel Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+.dark .glass-panel {
+  background: rgba(15, 23, 42, 0.68);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(119, 138, 155, 0.25);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(119, 138, 155, 0.45);
+}

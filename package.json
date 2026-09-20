@@ -1,0 +1,39 @@
+{
+  "name": "research-portal",
+  "version": "1.6.1",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "dev:api": "pnpm --filter api dev",
+    "dev:worker": "pnpm --filter worker dev",
+    "dev:web": "pnpm --filter web dev",
+    "dev:mobile": "pnpm --filter mobile start",
+    "mobile:ios": "pnpm --filter mobile ios",
+    "mobile:android": "pnpm --filter mobile android",
+    "ios": "pnpm --filter mobile ios",
+    "android": "pnpm --filter mobile android",
+    "db:generate": "pnpm --filter @repo/database db:generate",
+    "db:push": "pnpm --filter @repo/database db:push",
+    "db:seed": "pnpm --filter @repo/database db:seed",
+    "docker:build": "docker compose -f docker/docker-compose.yml build",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:logs": "docker compose -f docker/docker-compose.yml logs -f",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "ui": "pnpm --filter @repo/ui ui",
+    "check-types": "turbo run check-types"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "prettier": "catalog:",
+    "turbo": "2.6.0"
+  },
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=24"
+  }
+}

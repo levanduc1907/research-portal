@@ -1,0 +1,3 @@
+# Docker local volume directories (if any bind mounts are ever used)
+data/
+*.log

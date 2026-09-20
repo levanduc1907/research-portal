@@ -1,0 +1,12 @@
+{
+  "extends": "@repo/typescript-config/react-native.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src/**/*", "index.js", "App.tsx"]
+}

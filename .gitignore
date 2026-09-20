@@ -1,0 +1,71 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+
+# Turborepo
+.turbo/
+
+# Next.js
+.next/
+out/
+
+# NestJS / TypeScript Builds
+dist/
+build/
+*.tsbuildinfo
+
+# Environment & Secrets
+.env
+.env*.local
+.env.production
+.env.staging
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE & Editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+*.sublime-workspace
+*.sublime-project
+
+# React Native & Mobile
+apps/mobile/.expo/
+apps/mobile/android/app/build/
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/ios/build/
+apps/mobile/ios/Pods/
+apps/mobile/ios/*.xcworkspace/xcuserdata/
+apps/mobile/ios/*.xcodeproj/xcuserdata/
+apps/mobile/*.lock
+*.apk
+*.aab
+*.ipa
+
+# Prisma / Database
+packages/database/dist/
+packages/database/prisma/*.db
+packages/database/prisma/*.db-journal
+
+# Testing & Coverage
+coverage/
+.nyc_output/

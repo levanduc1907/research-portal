@@ -1,0 +1,230 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum ImportStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum EmbeddingStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+enum ChatRoute {
+  STRUCTURED
+  SEMANTIC
+  HYBRID
+  UNSUPPORTED
+}
+
+model Institution {
+  id              String   @id @default(uuid())
+  openalexId      String   @unique @map("openalex_id")
+  displayName     String   @map("display_name")
+  acronym         String?
+  ror             String?
+  countryCode     String?  @map("country_code")
+  type            String?
+  homepageUrl     String?  @map("homepage_url")
+  imageUrl        String?  @db.Text @map("image_url")
+  worksCount      Int      @default(0) @map("works_count")
+  citedByCount    Int      @default(0) @map("cited_by_count")
+  hIndex          Int?     @map("h_index")
+  i10Index        Int?     @map("i10_index")
+  twoYearMeanCite Float?   @map("two_year_mean_citedness")
+  geo             Json?
+  summaryStats    Json?    @map("summary_stats")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@map("institutions")
+}
+
+model Paper {
+  id              String   @id @default(uuid())
+  openalexId      String   @unique @map("openalex_id")
+  doi             String?  @db.VarChar(512)
+  title           String   @db.Text
+  publicationDate DateTime @map("publication_date")
+  publicationYear Int      @map("publication_year")
+  citedByCount    Int      @default(0) @map("cited_by_count")
+  abstract        String?  @db.LongText
+  landingPageUrl  String?  @db.Text @map("landing_page_url")
+  pdfUrl          String?  @db.Text @map("pdf_url")
+  primaryTopicId  String?  @map("primary_topic_id")
+  primaryTopic    Topic?   @relation("PrimaryPaperTopic", fields: [primaryTopicId], references: [id], onDelete: SetNull)
+
+  authors         PaperAuthor[]
+  topics          PaperTopic[]
+  embeddingRecord EmbeddingRecord?
+
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([publicationDate])
+  @@index([publicationYear])
+  @@index([citedByCount])
+  @@index([primaryTopicId])
+  @@map("papers")
+}
+
+model Author {
+  id          String   @id @default(uuid())
+  openalexId  String   @unique @map("openalex_id")
+  displayName String   @map("display_name")
+  orcid       String?
+  institution String?  @default("University of Illinois Urbana-Champaign")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  papers      PaperAuthor[]
+
+  @@map("authors")
+}
+
+model PaperAuthor {
+  id             String   @id @default(uuid())
+  paperId        String   @map("paper_id")
+  paper          Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  authorId       String   @map("author_id")
+  author         Author   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorPosition String   @default("middle") @map("author_position") // "first", "middle", "last"
+  isCorresponding Boolean @default(false) @map("is_corresponding")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([paperId, authorId])
+  @@index([paperId])
+  @@index([authorId])
+  @@map("paper_authors")
+}
+
+model Topic {
+  id            String   @id @default(uuid())
+  openalexId    String   @unique @map("openalex_id")
+  displayName   String   @map("display_name")
+  subfieldId    String?  @map("subfield_id")
+  subfieldName  String?  @map("subfield_name")
+  fieldId       String?  @map("field_id")
+  fieldName     String?  @map("field_name")
+  domainId      String?  @map("domain_id")
+  domainName    String?  @map("domain_name")
+  worksCount    Int      @default(0) @map("works_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  papers        PaperTopic[]
+  primaryPapers Paper[]      @relation("PrimaryPaperTopic")
+
+  @@index([domainName])
+  @@index([fieldName])
+  @@map("topics")
+}
+
+model PaperTopic {
+  id        String   @id @default(uuid())
+  paperId   String   @map("paper_id")
+  paper     Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  topicId   String   @map("topic_id")
+  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  score     Float    @default(0.0)
+  isPrimary Boolean  @default(false) @map("is_primary")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([paperId, topicId])
+  @@index([paperId])
+  @@index([topicId])
+  @@map("paper_topics")
+}
+
+model Researcher {
+  id             String   @id @default(uuid())
+  openalexId     String?  @unique @map("openalex_id")
+  name           String
+  email          String?
+  department     String?
+  title          String?  // e.g. "Professor of Computer Science"
+  bio            String?  @db.Text
+  profileUrl     String?  @db.Text @map("profile_url")
+  photoUrl       String?  @db.Text @map("photo_url")
+  worksCount     Int      @default(0) @map("works_count")
+  citedByCount   Int      @default(0) @map("cited_by_count")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  keywords       ResearcherKeyword[]
+
+  @@index([name])
+  @@index([department])
+  @@map("researchers")
+}
+
+model ResearcherKeyword {
+  id           String     @id @default(uuid())
+  researcherId String     @map("researcher_id")
+  researcher   Researcher @relation(fields: [researcherId], references: [id], onDelete: Cascade)
+  keyword      String
+  createdAt    DateTime   @default(now()) @map("created_at")
+
+  @@index([researcherId])
+  @@index([keyword])
+  @@map("researcher_keywords")
+}
+
+model ImportRun {
+  id             String       @id @default(uuid())
+  source         String       @default("openalex")
+  status         ImportStatus @default(PENDING)
+  cursor         String?      @db.Text
+  totalFetched   Int          @default(0) @map("total_fetched")
+  importedCount  Int          @default(0) @map("imported_count")
+  errorMessage   String?      @db.Text @map("error_message")
+  startedAt      DateTime?    @map("started_at")
+  completedAt    DateTime?    @map("completed_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("import_runs")
+}
+
+model EmbeddingRecord {
+  id               String          @id @default(uuid())
+  paperId          String          @unique @map("paper_id")
+  paper            Paper           @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  embeddingVersion String          @default("v1") @map("embedding_version")
+  model            String          @default("text-embedding-3-small")
+  contentHash      String          @map("content_hash")
+  qdrantPointId    String?         @map("qdrant_point_id")
+  status           EmbeddingStatus @default(PENDING)
+  errorMessage     String?         @db.Text @map("error_message")
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([contentHash])
+  @@map("embedding_records")
+}
+
+model ChatRequest {
+  id         String     @id @default(uuid())
+  query      String     @db.Text
+  route      ChatRoute  @default(SEMANTIC)
+  response   String?    @db.LongText
+  citations  Json?
+  latencyMs  Int?       @map("latency_ms")
+  createdAt  DateTime   @default(now()) @map("created_at")
+
+  @@map("chat_requests")
+}
