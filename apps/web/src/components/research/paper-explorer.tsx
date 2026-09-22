@@ -51,197 +51,205 @@ export function PaperExplorer({
   const { data: papers, meta } = papersResult;
 
   return (
-    <section id="papers" className="py-16 border-b border-slate-200/80 bg-white dark:border-slate-800/80 dark:bg-slate-900/50">
+    <section id="papers" className="py-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0E1726]">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         {/* Section Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between mb-8 gap-4">
           <div>
-            <div className="inline-flex items-center gap-1.5 rounded-md bg-orange-50 px-2.5 py-1 text-xs font-semibold text-orange-700 dark:bg-orange-950/50 dark:text-orange-300 mb-2">
+            <div className="inline-flex items-center gap-1.5 rounded bg-[#FF5F05] px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-white mb-2 shadow-sm">
               <BookOpen className="w-3.5 h-3.5" />
               <span>Literature Repository</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900 dark:text-white">
-              Explore UIUC Publications
+            <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#13294B] dark:text-white font-heading">
+              UIUC Research Papers Catalog
             </h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Filter by topic, year, or citation impact across verified Illinois works.
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              Query recent publications, topics, authors, and citation impact directly from OpenAlex.
             </p>
           </div>
 
-          <div className="text-xs font-medium text-slate-500 dark:text-slate-400">
-            Showing <span className="font-semibold text-slate-900 dark:text-white">{papers.length}</span> of{" "}
-            <span className="font-semibold text-slate-900 dark:text-white">{meta.total}</span> works
-          </div>
-        </div>
-
-        {/* Filters and Search Bar */}
-        <div className="rounded-2xl border border-slate-200/80 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-900 mb-8 shadow-sm">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3">
-            {/* Search Input */}
-            <div className="lg:col-span-5 relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search title, abstract, keywords..."
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
-              />
-            </div>
-
-            {/* Topic Filter */}
-            <div className="lg:col-span-3">
-              <select
-                value={selectedTopic}
-                onChange={(e) => onTopicChange(e.target.value)}
-                aria-label="Filter by research topic"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-              >
-                <option value="">All Topics</option>
-                <option value="Parallel Computing">Parallel Computing & Optimization</option>
-                <option value="Topic Modeling">Topic Modeling & Natural Language AI</option>
-                <option value="Quantum">Semiconductor Quantum Structures</option>
-                <option value="Photosynthetic">Photosynthetic Processes</option>
-                <option value="Distributed">Distributed Systems & Networks</option>
-                <option value="Soybean">Soybean Genetics & Agriculture</option>
-              </select>
-            </div>
-
-            {/* Year Filter */}
-            <div className="lg:col-span-2">
-              <select
-                value={selectedYear}
-                onChange={(e) => onYearChange(e.target.value)}
-                aria-label="Filter by publication year"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white"
-              >
-                <option value="">All Years</option>
-                <option value="2026">2026</option>
-                <option value="2025">2025</option>
-                <option value="2024">2024</option>
-                <option value="2023">2023</option>
-                <option value="2022">2022</option>
-              </select>
-            </div>
-
-            {/* Sort Filter */}
-            <div className="lg:col-span-2">
+          {/* Sort toggles */}
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <span className="text-xs font-bold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              Sort By:
+            </span>
+            <div className="inline-flex rounded-lg bg-slate-100 p-1 border border-slate-200 dark:bg-[#132038] dark:border-slate-800">
               <button
-                onClick={() => onSortChange(sortBy === "citations" ? "date" : "citations")}
-                className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors"
+                onClick={() => onSortChange("citations")}
+                className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${
+                  sortBy === "citations"
+                    ? "bg-[#13294B] text-white shadow-sm"
+                    : "text-slate-600 dark:text-slate-400 hover:text-[#FF5F05]"
+                }`}
               >
-                <ArrowUpDown className="w-4 h-4 text-orange-500" />
-                <span>{sortBy === "citations" ? "Most Cited" : "Latest"}</span>
+                Most Cited
+              </button>
+              <button
+                onClick={() => onSortChange("date")}
+                className={`rounded-md px-3 py-1 text-xs font-bold transition-all ${
+                  sortBy === "date"
+                    ? "bg-[#13294B] text-white shadow-sm"
+                    : "text-slate-600 dark:text-slate-400 hover:text-[#FF5F05]"
+                }`}
+              >
+                Latest (2024–2026)
               </button>
             </div>
           </div>
         </div>
 
-        {/* Paper Cards List */}
+        {/* Filter Controls Bar */}
+        <div className="mb-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 p-4 rounded-xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-[#132038]">
+          {/* Search input */}
+          <div className="lg:col-span-2 relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Search paper titles, authors, keywords..."
+              className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5F05] focus:ring-1 focus:ring-[#FF5F05] dark:border-slate-700 dark:bg-[#0A1120] dark:text-white"
+            />
+          </div>
+
+          {/* Year selector */}
+          <div className="relative">
+            <select
+              value={selectedYear}
+              onChange={(e) => onYearChange(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:border-[#FF5F05] focus:ring-1 focus:ring-[#FF5F05] dark:border-slate-700 dark:bg-[#0A1120] dark:text-white"
+            >
+              <option value="">All Publication Years</option>
+              <option value="2026">2026 (Recent)</option>
+              <option value="2025">2025</option>
+              <option value="2024">2024</option>
+            </select>
+          </div>
+
+          {/* Topic filter indicator/clear */}
+          <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-white border border-slate-300 dark:border-slate-700 dark:bg-[#0A1120]">
+            <span className="text-xs text-slate-600 dark:text-slate-400 truncate max-w-[140px]">
+              {selectedTopic ? `Topic: ${selectedTopic}` : "All Topics"}
+            </span>
+            {selectedTopic && (
+              <button
+                onClick={() => onTopicChange("")}
+                className="text-xs text-[#FF5F05] hover:underline font-bold"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Papers List */}
         {papers.length === 0 ? (
-          <div className="text-center py-16 rounded-2xl border border-dashed border-slate-300 dark:border-slate-800">
-            <BookOpen className="mx-auto w-12 h-12 text-slate-400 mb-3" />
-            <h3 className="font-semibold text-slate-900 dark:text-white">No papers found</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-              Try adjusting your search terms or clearing selected filters.
+          <div className="text-center py-16 rounded-xl border border-dashed border-slate-300 dark:border-slate-800">
+            <BookOpen className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-200">
+              No matching research papers found
+            </h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm mx-auto">
+              Try adjusting your search query, clearing topic filters, or selecting a different publication year.
             </p>
           </div>
         ) : (
           <div className="space-y-4">
-            {papers.map((p) => {
-              const isExpanded = expandedId === p.id;
+            {papers.map((paper) => {
+              const isExpanded = expandedId === paper.id;
               return (
-                <div
-                  key={p.id}
-                  className="rounded-2xl border border-slate-200/80 bg-white p-5 sm:p-6 shadow-sm hover:shadow-md transition-all dark:border-slate-800 dark:bg-slate-900"
+                <article
+                  key={paper.id}
+                  className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm hover:shadow-md transition-all duration-200 dark:border-slate-800 dark:bg-[#132038] hover:border-[#FF5F05]/50 group"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                    <div className="space-y-2 flex-1">
-                      {/* Topic & Year Badges */}
-                      <div className="flex flex-wrap items-center gap-2">
-                        {p.primaryTopic && (
-                          <span className="rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
-                            {p.primaryTopic.displayName}
+                    <div className="flex-1">
+                      {/* Topics and Meta badges */}
+                      <div className="flex flex-wrap items-center gap-2 mb-2.5">
+                        {paper.primaryTopic && (
+                          <span className="inline-flex items-center rounded bg-[#13294B]/10 px-2 py-0.5 text-[11px] font-bold text-[#13294B] dark:bg-white/10 dark:text-slate-200">
+                            {paper.primaryTopic.displayName}
                           </span>
                         )}
-                        <span className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400 font-medium">
+                        <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-400">
                           <Calendar className="w-3 h-3" />
-                          {p.publicationYear}
+                          {paper.publicationYear}
                         </span>
+                        {paper.citedByCount > 20 && (
+                          <span className="inline-flex items-center gap-1 rounded bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-[#FF5F05] dark:bg-orange-950/60 dark:text-orange-300">
+                            <Quote className="w-3 h-3" />
+                            {paper.citedByCount} Citations
+                          </span>
+                        )}
                       </div>
 
                       {/* Title */}
                       <h3
-                        onClick={() => onSelectPaper?.(p)}
-                        className="text-lg font-bold text-slate-900 dark:text-white leading-snug hover:text-orange-600 dark:hover:text-orange-400 cursor-pointer transition-colors"
+                        onClick={() => onSelectPaper?.(paper)}
+                        className="text-base sm:text-lg font-bold text-[#13294B] group-hover:text-[#FF5F05] dark:text-white dark:group-hover:text-[#FF5F05] transition-colors leading-snug cursor-pointer font-heading"
                       >
-                        {p.title}
+                        {paper.title}
                       </h3>
 
                       {/* Authors */}
-                      <p className="text-xs text-slate-600 dark:text-slate-300">
-                        {p.authors.map((a) => a.displayName).join(" • ")}
-                      </p>
-                    </div>
-
-                    {/* Citations Badge */}
-                    <div className="flex items-center gap-3 self-start">
-                      <div className="flex items-center gap-1.5 rounded-xl bg-orange-50 px-3 py-1.5 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300 border border-orange-200/60 dark:border-orange-900/60">
-                        <Quote className="w-3.5 h-3.5" />
-                        <span className="text-xs font-bold">{p.citedByCount}</span>
-                        <span className="text-[10px] text-orange-600/80 dark:text-orange-400">cites</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Abstract & DOI */}
-                  {p.abstract && (
-                    <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800">
-                      <p
-                        className={`text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed ${
-                          isExpanded ? "" : "line-clamp-2"
-                        }`}
-                      >
-                        {p.abstract}
+                      <p className="mt-2 text-xs text-slate-600 dark:text-slate-300">
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">Authors: </span>
+                        {paper.authors && paper.authors.length > 0
+                          ? paper.authors.map((a) => a.displayName).join(", ")
+                          : "University of Illinois Faculty"}
                       </p>
 
-                      <div className="mt-3 flex items-center justify-between">
+                      {/* Abstract snippet */}
+                      {paper.abstract && (
+                        <div className="mt-3 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                          {isExpanded ? paper.abstract : `${paper.abstract.slice(0, 180)}...`}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex sm:flex-col items-center sm:items-end gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
+                      {paper.abstract && (
                         <button
-                          onClick={() => toggleExpand(p.id)}
-                          className="flex items-center gap-1 text-xs font-semibold text-orange-600 hover:text-orange-700 dark:text-orange-400"
+                          onClick={() => toggleExpand(paper.id)}
+                          className="text-xs text-slate-500 hover:text-[#13294B] dark:hover:text-white flex items-center gap-1 font-semibold"
                         >
-                          <span>{isExpanded ? "Show less" : "Read abstract"}</span>
                           {isExpanded ? (
-                            <ChevronUp className="w-3.5 h-3.5" />
+                            <>
+                              <span>Less</span>
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </>
                           ) : (
-                            <ChevronDown className="w-3.5 h-3.5" />
+                            <>
+                              <span>Abstract</span>
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </>
                           )}
                         </button>
+                      )}
 
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={() => onSelectPaper?.(p)}
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-orange-600 dark:text-slate-300 dark:hover:text-orange-400 transition-colors"
-                          >
-                            <span>View Details</span>
-                          </button>
+                      <button
+                        onClick={() => onSelectPaper?.(paper)}
+                        className="rounded-lg bg-[#13294B] px-3 py-1.5 text-xs font-bold text-white hover:bg-[#FF5F05] transition-colors shadow-sm"
+                      >
+                        View Details
+                      </button>
 
-                          {p.doi && (
-                            <a
-                              href={p.doi.startsWith("http") ? p.doi : `https://doi.org/${p.doi}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
-                            >
-                              <span>Full Article</span>
-                              <ExternalLink className="w-3 h-3" />
-                            </a>
-                          )}
-                        </div>
-                      </div>
+                      {(paper.doi || paper.landingPageUrl) && (
+                        <a
+                          href={paper.doi || paper.landingPageUrl || "#"}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-xs text-[#FF5F05] hover:underline font-semibold"
+                        >
+                          <span>DOI Link</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      )}
                     </div>
-                  )}
-                </div>
+                  </div>
+                </article>
               );
             })}
           </div>
@@ -249,24 +257,29 @@ export function PaperExplorer({
 
         {/* Pagination Controls */}
         {meta.totalPages > 1 && (
-          <div className="mt-8 flex items-center justify-between border-t border-slate-200/80 dark:border-slate-800/80 pt-6">
-            <button
-              disabled={!meta.hasPrevPage}
-              onClick={() => onPageChange(meta.page - 1)}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-            >
-              Previous
-            </button>
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              Page {meta.page} of {meta.totalPages}
+          <div className="mt-10 flex items-center justify-between border-t border-slate-200 dark:border-slate-800 pt-6">
+            <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              Showing page {meta.page} of {meta.totalPages} ({meta.total.toLocaleString()} total papers)
             </span>
-            <button
-              disabled={!meta.hasNextPage}
-              onClick={() => onPageChange(meta.page + 1)}
-              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:pointer-events-none dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300"
-            >
-              Next
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={meta.page <= 1}
+                onClick={() => onPageChange(meta.page - 1)}
+                className="rounded-lg border border-slate-300 px-3.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1 rounded bg-[#FF5F05] text-xs font-bold text-white">
+                {meta.page}
+              </span>
+              <button
+                disabled={meta.page >= meta.totalPages}
+                onClick={() => onPageChange(meta.page + 1)}
+                className="rounded-lg border border-slate-300 px-3.5 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+              >
+                Next
+              </button>
+            </div>
           </div>
         )}
       </div>

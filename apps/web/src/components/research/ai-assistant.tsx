@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { ChatCitationDto } from "@repo/contracts";
 import { researchApi } from "../../lib/research-api";
+import { BlockILogo } from "./illinois-logo";
 
 interface Message {
   id: string;
@@ -29,10 +30,10 @@ interface Message {
 }
 
 const SUGGESTIONS = [
-  "Most cited AI papers?",
-  "Memory consistency for AI accelerators?",
-  "Photosynthesis crop genetics?",
-  "Multi-robot motion planning research?",
+  "Trường gần đây nghiên cứu về lĩnh vực nào?",
+  "Những bài báo nào nổi bật nhất?",
+  "Chủ đề nào có nhiều nghiên cứu nhất?",
+  "Researcher nào nghiên cứu về AI?",
 ];
 
 interface AiAssistantProps {
@@ -51,7 +52,7 @@ export function AiAssistant({ isOpen: controlledIsOpen, onToggle }: AiAssistantP
     {
       id: "welcome",
       sender: "assistant",
-      text: "Hello! I am the **UIUC Research AI Assistant**. Ask me anything about recent University of Illinois research, notable faculty papers, or key focus areas.",
+      text: "Xin chào! Tôi là **Trợ lý Nghiên cứu AI của Đại học Illinois (UIUC)**. Bạn có thể hỏi tôi về các hướng nghiên cứu gần đây, các bài báo nổi bật, giáo sư tiêu biểu hoặc xu hướng học thuật 2 năm qua.",
     },
   ]);
 
@@ -84,67 +85,66 @@ export function AiAssistant({ isOpen: controlledIsOpen, onToggle }: AiAssistantP
     ]);
 
     setIsStreaming(true);
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     try {
-      // 2. Consume continuous streaming chunks like ChatGPT
-      for await (const chunk of researchApi.streamAssistant(text, abortController.signal)) {
-        setMessages((prev) =>
-          prev.map((msg) => {
-            if (msg.id !== assistantMessageId) return msg;
-
-            let updatedText = msg.text;
-            if (chunk.token) {
-              updatedText += chunk.token;
-            }
-
-            return {
-              ...msg,
-              text: updatedText,
-              route: chunk.route || msg.route,
-              sources: chunk.sources || msg.sources,
-              isStreaming: !chunk.done,
-            };
-          })
-        );
-
+      const stream = researchApi.streamAssistant(text, controller.signal);
+      for await (const chunk of stream) {
+        if (chunk.sources || chunk.route) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, sources: chunk.sources, route: chunk.route }
+                : msg
+            )
+          );
+        }
+        if (chunk.token) {
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId
+                ? { ...msg, text: msg.text + chunk.token }
+                : msg
+            )
+          );
+        }
         if (chunk.done) {
-          break;
+          setMessages((prev) =>
+            prev.map((msg) =>
+              msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg
+            )
+          );
+          setIsStreaming(false);
         }
       }
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
+    } catch (e: any) {
+      if (e.name !== "AbortError") {
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === assistantMessageId
               ? {
                   ...msg,
-                  text:
-                    msg.text ||
-                    "I am currently summarizing recent UIUC publications. Top works in the OpenAlex Illinois repository cover high performance computing, memory models, and plant genomics.",
+                  text: "Lỗi kết nối tới AI backend.",
                   isStreaming: false,
                 }
               : msg
           )
         );
       }
-    } finally {
       setIsStreaming(false);
-      abortControllerRef.current = null;
-      setMessages((prev) =>
-        prev.map((msg) =>
-          msg.id === assistantMessageId ? { ...msg, isStreaming: false } : msg
-        )
-      );
     }
   };
 
   const handleStop = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
-      setIsStreaming(false);
+      abortControllerRef.current = null;
     }
+    setIsStreaming(false);
+    setMessages((prev) =>
+      prev.map((msg) => (msg.isStreaming ? { ...msg, isStreaming: false } : msg))
+    );
   };
 
   const handleClear = () => {
@@ -153,7 +153,7 @@ export function AiAssistant({ isOpen: controlledIsOpen, onToggle }: AiAssistantP
       {
         id: "welcome",
         sender: "assistant",
-        text: "Conversation cleared. How can I assist your UIUC research exploration?",
+        text: "Hội thoại đã được làm mới. Tôi có thể hỗ trợ gì cho bạn về các nghiên cứu tại UIUC?",
       },
     ]);
   };
@@ -165,39 +165,37 @@ export function AiAssistant({ isOpen: controlledIsOpen, onToggle }: AiAssistantP
         <button
           onClick={toggleOpen}
           aria-label="Chat with AI Assistant"
-          className="group relative flex items-center gap-2.5 rounded-full bg-gradient-to-r from-[#13294B] via-[#1E3A8A] to-[#FF5F05] p-3.5 sm:px-5 sm:py-3.5 text-white shadow-2xl shadow-orange-600/30 hover:shadow-orange-600/50 hover:scale-105 active:scale-95 transition-all duration-200"
+          className="group relative flex items-center gap-2.5 rounded-full bg-[#13294B] border-2 border-[#FF5F05] p-3 sm:px-5 sm:py-3.5 text-white shadow-2xl hover:bg-[#0E1F3B] hover:scale-105 active:scale-95 transition-all duration-200"
         >
           {/* Pulsing ring indicator */}
           <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-orange-500 border-2 border-white dark:border-slate-900" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#FF5F05] opacity-75" />
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-[#FF5F05] border-2 border-white" />
           </span>
 
-          <Sparkles className="w-5 h-5 text-orange-400 group-hover:rotate-12 transition-transform duration-300" />
+          <BlockILogo className="w-5 h-6 drop-shadow-sm" withOutline={false} />
           <span className="hidden sm:inline font-bold text-sm tracking-tight">
-            Chat with AI Assistant
+            UIUC AI Assistant
           </span>
         </button>
       </div>
 
       {/* 2. Sleek Floating Mini Popup Window */}
       {isOpen && (
-        <div className="fixed bottom-24 right-4 sm:right-6 z-50 flex flex-col w-[94vw] sm:w-[420px] h-[580px] max-h-[calc(100vh-7.5rem)] rounded-3xl border border-slate-200/90 bg-white/95 backdrop-blur-xl shadow-2xl dark:border-slate-800/90 dark:bg-slate-900/95 overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+        <div className="fixed bottom-24 right-4 sm:right-6 z-50 flex flex-col w-[94vw] sm:w-[440px] h-[590px] max-h-[calc(100vh-7.5rem)] rounded-2xl border-2 border-[#13294B] bg-white shadow-2xl dark:border-slate-700 dark:bg-[#0E1726] overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
           {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/80 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="flex items-center justify-between bg-[#13294B] px-4 py-3.5 text-white">
             <div className="flex items-center gap-2.5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-[#13294B] to-[#FF5F05] text-white font-black text-sm shadow-sm">
-                I
-              </div>
+              <BlockILogo className="w-5 h-6.5" withOutline={false} />
               <div>
                 <div className="flex items-center gap-1.5">
-                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                  <h3 className="text-sm font-bold text-white font-heading">
                     UIUC Research AI
                   </h3>
-                  <span className="flex h-2 w-2 rounded-full bg-emerald-500" />
+                  <span className="flex h-2 w-2 rounded-full bg-[#FF5F05]" />
                 </div>
-                <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">
-                  Streaming • Grounded RAG
+                <p className="text-[10px] text-slate-300 font-medium">
+                  Streaming • Grounded RAG Assistant
                 </p>
               </div>
             </div>
@@ -205,15 +203,15 @@ export function AiAssistant({ isOpen: controlledIsOpen, onToggle }: AiAssistantP
             <div className="flex items-center gap-1">
               <button
                 onClick={handleClear}
-                title="Clear conversation"
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
+                title="Làm mới hội thoại"
+                className="rounded-lg p-1.5 text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={toggleOpen}
-                title="Minimize"
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200 transition-colors"
+                title="Thu nhỏ"
+                className="rounded-lg p-1.5 text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -221,7 +219,7 @@ export function AiAssistant({ isOpen: controlledIsOpen, onToggle }: AiAssistantP
           </div>
 
           {/* Messages Container */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs sm:text-sm">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs sm:text-sm bg-slate-50/50 dark:bg-[#0A1120]/60">
             {messages.map((msg) => (
               <div
                 key={msg.id}
@@ -230,53 +228,55 @@ export function AiAssistant({ isOpen: controlledIsOpen, onToggle }: AiAssistantP
                 }`}
               >
                 {msg.sender === "assistant" && (
-                  <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-orange-500/15 text-orange-600 dark:text-orange-400 mt-0.5">
-                    <Bot className="w-3.5 h-3.5" />
+                  <div className="flex h-6 w-7 shrink-0 items-center justify-center rounded bg-[#13294B] mt-0.5 shadow-sm">
+                    <BlockILogo className="w-3.5 h-4.5" withOutline={false} />
                   </div>
                 )}
 
                 <div
-                  className={`max-w-[84%] rounded-2xl p-3 leading-relaxed ${
+                  className={`max-w-[84%] rounded-xl p-3.5 leading-relaxed ${
                     msg.sender === "user"
                       ? "bg-[#13294B] text-white rounded-br-none shadow-sm"
-                      : "bg-slate-100 text-slate-800 dark:bg-slate-800/90 dark:text-slate-200 rounded-bl-none border border-slate-200/60 dark:border-slate-700/60"
+                      : "bg-white text-slate-800 dark:bg-[#132038] dark:text-slate-200 rounded-bl-none border border-slate-200 dark:border-slate-800 shadow-sm"
                   }`}
                 >
-                  {/* Message content with markdown bolding simulation */}
+                  {/* Message text */}
                   <div className="whitespace-pre-wrap font-normal">
                     {msg.text}
-                    {/* ChatGPT blinking block cursor while streaming */}
+                    {/* Blinking cursor while streaming */}
                     {msg.isStreaming && (
-                      <span className="inline-block w-1.5 h-3.5 bg-orange-500 animate-pulse ml-1 translate-y-0.5" />
+                      <span className="inline-block w-1.5 h-3.5 bg-[#FF5F05] animate-pulse ml-1 translate-y-0.5 font-mono">
+                        ▍
+                      </span>
                     )}
                   </div>
 
                   {/* Grounded Citation Chips */}
                   {msg.sources && msg.sources.length > 0 && !msg.isStreaming && (
-                    <div className="mt-3 pt-2.5 border-t border-slate-200/80 dark:border-slate-700/80">
-                      <div className="flex items-center gap-1 text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5">
-                        <BookOpen className="w-3 h-3 text-orange-500" />
-                        <span>Sources Cited</span>
+                    <div className="mt-3 pt-2.5 border-t border-slate-200 dark:border-slate-700">
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-[#FF5F05] uppercase tracking-wider mb-1.5">
+                        <BookOpen className="w-3 h-3 text-[#FF5F05]" />
+                        <span>Tài Liệu Tham Khảo (Citations)</span>
                       </div>
-                      <div className="space-y-1">
+                      <div className="space-y-1.5">
                         {msg.sources.map((s) => (
                           <div
                             key={s.paperId}
-                            className="rounded-lg bg-white/80 dark:bg-slate-900/80 p-2 text-[11px] border border-slate-200/50 dark:border-slate-700/50"
+                            className="rounded-lg bg-slate-50 dark:bg-[#0A1120] p-2 text-[11px] border border-slate-200 dark:border-slate-800"
                           >
-                            <p className="font-semibold line-clamp-1 text-slate-800 dark:text-slate-200">
+                            <p className="font-bold line-clamp-1 text-[#13294B] dark:text-slate-200">
                               {s.title}
                             </p>
-                            <div className="mt-1 flex items-center justify-between text-[10px] text-slate-400">
-                              <span>{s.year} • {s.citedByCount} cites</span>
+                            <div className="mt-1 flex items-center justify-between text-[10px] text-slate-500">
+                              <span>Năm: {s.year} • {s.citedByCount} trích dẫn</span>
                               {s.doi && (
                                 <a
                                   href={s.doi.startsWith("http") ? s.doi : `https://doi.org/${s.doi}`}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="text-orange-600 hover:underline flex items-center gap-0.5"
+                                  className="text-[#FF5F05] hover:underline flex items-center gap-0.5 font-bold"
                                 >
-                                  <span>DOI</span>
+                                  <span>Xem Bài Báo</span>
                                   <ExternalLink className="w-2.5 h-2.5" />
                                 </a>
                               )}
@@ -292,67 +292,64 @@ export function AiAssistant({ isOpen: controlledIsOpen, onToggle }: AiAssistantP
             <div ref={messagesEndRef} />
           </div>
 
-          {/* Quick Suggestion Chips (when only greeting exists) */}
+          {/* Quick Suggestion Chips */}
           {messages.length <= 2 && (
-            <div className="px-4 pb-2">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-                Suggested prompts
+            <div className="px-4 pb-2 bg-white dark:bg-[#0E1726]">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                Câu hỏi gợi ý
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {SUGGESTIONS.map((s) => (
+                {SUGGESTIONS.map((chip) => (
                   <button
-                    key={s}
-                    onClick={() => handleSend(s)}
-                    className="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-700 hover:border-orange-300 hover:text-orange-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300 transition-colors"
+                    key={chip}
+                    onClick={() => handleSend(chip)}
+                    className="rounded-full bg-slate-100 hover:bg-[#FF5F05] hover:text-white px-2.5 py-1 text-[11px] font-medium text-slate-700 transition-colors dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-[#FF5F05] dark:hover:text-white border border-slate-200 dark:border-slate-700"
                   >
-                    {s}
+                    {chip}
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Footer Input Bar */}
-          <div className="border-t border-slate-100 bg-slate-50/60 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+          {/* Input Bar */}
+          <div className="p-3 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0E1726]">
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 handleSend();
               }}
-              className="relative flex items-center"
+              className="flex items-center gap-2"
             >
               <input
                 type="text"
-                placeholder="Ask about UIUC papers, faculty, topics..."
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                placeholder="Đặt câu hỏi về nghiên cứu UIUC..."
                 disabled={isStreaming}
-                className="w-full rounded-2xl border border-slate-200 bg-white pl-3.5 pr-11 py-2.5 text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500 dark:border-slate-800 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-500"
+                className="flex-1 rounded-lg border border-slate-300 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#FF5F05] focus:ring-1 focus:ring-[#FF5F05] dark:border-slate-700 dark:bg-[#0A1120] dark:text-white"
               />
 
               {isStreaming ? (
                 <button
                   type="button"
                   onClick={handleStop}
-                  title="Stop generating"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-xl bg-red-500 text-white hover:bg-red-600 transition-colors"
+                  title="Dừng tạo phản hồi"
+                  className="rounded-lg bg-rose-600 p-2.5 text-white hover:bg-rose-700 transition-all shadow-sm"
                 >
-                  <Square className="w-3 h-3 fill-current" />
+                  <Square className="w-4 h-4 fill-white" />
                 </button>
               ) : (
                 <button
                   type="submit"
                   disabled={!input.trim()}
-                  title="Send message"
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 flex h-7 w-7 items-center justify-center rounded-xl bg-orange-600 text-white hover:bg-orange-500 disabled:opacity-30 transition-colors"
+                  title="Gửi câu hỏi"
+                  className="rounded-lg bg-[#FF5F05] p-2.5 text-white hover:bg-[#E84A27] disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                 >
-                  <Send className="w-3 h-3" />
+                  <Send className="w-4 h-4" />
                 </button>
               )}
             </form>
-            <p className="mt-1.5 text-center text-[10px] text-slate-400">
-              Answers grounded in verified OpenAlex publications
-            </p>
           </div>
         </div>
       )}

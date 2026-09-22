@@ -69,3 +69,4 @@ packages/database/prisma/*.db-journal
 # Testing & Coverage
 coverage/
 .nyc_output/
+.agents

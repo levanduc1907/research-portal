@@ -1,15 +1,31 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Montserrat, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "../components/theme-provider";
 import React from "react";
 
-const inter = Inter({ subsets: ["latin"] });
+// Official UIUC Brand Typography: Montserrat (Headlines) & Source Sans 3 (Body)
+const montserrat = Montserrat({
+  subsets: ["latin"],
+  variable: "--font-montserrat",
+  weight: ["400", "500", "600", "700", "800", "900"],
+  display: "swap",
+});
+
+const sourceSans = Source_Sans_3({
+  subsets: ["latin"],
+  variable: "--font-source-sans",
+  weight: ["300", "400", "500", "600", "700"],
+  display: "swap",
+});
 
 export const metadata: Metadata = {
-  title: "UIUC Research Portal & AI Assistant | University of Illinois Urbana-Champaign",
+  title: "Research Portal | University of Illinois Urbana-Champaign",
   description:
-    "Explore UIUC research publications, discover notable faculty researchers, explore interactive trend charts, and ask grounded questions to the AI assistant.",
+    "Official Research Intelligence Portal of the University of Illinois Urbana-Champaign (UIUC). Explore 20,000+ publications, active faculty research directories, citation analytics, and an AI Research Assistant grounded in OpenAlex scholarly records.",
+  icons: {
+    icon: "/favicon.ico",
+  },
 };
 
 export default function RootLayout({
@@ -18,9 +34,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning className={`${montserrat.variable} ${sourceSans.variable}`}>
       <body
-        className={`${inter.className} min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased selection:bg-orange-500 selection:text-white`}
+        className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#0A1120] dark:text-slate-100 antialiased selection:bg-[#FF5F05] selection:text-white"
       >
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           {children}
