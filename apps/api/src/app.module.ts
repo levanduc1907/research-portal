@@ -1,14 +1,11 @@
 import { Module } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { DatabaseModule } from "./modules/database/database.module";
-import { AuthModule } from "./modules/auth/auth.module";
-import { UsersModule } from "./modules/users/users.module";
-import { NotesModule } from "./modules/notes/notes.module";
-import { QueueModule } from "./modules/queue/queue.module";
-import { TeamsModule } from "./modules/teams/teams.module";
+import { InstitutionModule } from "./modules/institution/institution.module";
+import { AnalyticsModule } from "./modules/analytics/analytics.module";
+import { PaperModule } from "./modules/papers/papers.module";
+import { ResearcherModule } from "./modules/researchers/researchers.module";
 import { ChatModule } from "./modules/chat/chat.module";
-import { TeamNotesModule } from "./modules/team-notes/team-notes.module";
-import { TeamDocumentsModule } from "./modules/team-documents/team-documents.module";
 import { HealthController } from "./modules/health/health.controller";
 
 @Module({
@@ -17,14 +14,11 @@ import { HealthController } from "./modules/health/health.controller";
       isGlobal: true,
     }),
     DatabaseModule,
-    QueueModule,
-    AuthModule,
-    UsersModule,
-    NotesModule,
-    TeamsModule,
+    InstitutionModule,
+    AnalyticsModule,
+    PaperModule,
+    ResearcherModule,
     ChatModule,
-    TeamNotesModule,
-    TeamDocumentsModule,
   ],
   controllers: [HealthController],
 })

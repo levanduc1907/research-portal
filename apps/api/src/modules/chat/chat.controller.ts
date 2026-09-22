@@ -1,57 +1,40 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Param,
-  Query,
-  UseGuards,
-} from "@nestjs/common";
-import { ApiTags, ApiOperation, ApiBearerAuth } from "@nestjs/swagger";
-import { JwtAuthGuard } from "../../common/guards/jwt-auth.guard";
-import { CurrentUser } from "../../common/decorators/current-user.decorator";
-import { ChatService, CreateChannelDto, PostMessageDto } from "./chat.service";
+import { Body, Controller, Post, Res } from "@nestjs/common";
+import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { Response } from "express";
+import { ChatService } from "./chat.service";
+import { ChatRequestDto, ChatResponseDto } from "@repo/contracts";
 
-@ApiTags("Chat & Channels")
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
-@Controller()
+@ApiTags("Chat & Assistant")
+@Controller("v1/chat")
 export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
-  @Get("teams/:teamId/channels")
-  @ApiOperation({ summary: "List all channels for a team" })
-  getTeamChannels(@Param("teamId") teamId: string, @CurrentUser() user: any) {
-    return this.chatService.getTeamChannels(teamId, user.id);
+  @Post()
+  @ApiOperation({ summary: "Ask a question about recent UIUC research (unary)" })
+  async askQuestion(@Body() body: ChatRequestDto): Promise<ChatResponseDto> {
+    return this.chatService.processQuestion(body);
   }
 
-  @Post("teams/:teamId/channels")
-  @ApiOperation({ summary: "Create a new channel in a team" })
-  createChannel(
-    @Param("teamId") teamId: string,
-    @CurrentUser() user: any,
-    @Body() dto: CreateChannelDto
-  ) {
-    return this.chatService.createChannel(teamId, user.id, dto);
-  }
+  @Post("stream")
+  @ApiOperation({
+    summary:
+      "Ask a question with continuous ChatGPT-like streaming response (SSE)",
+  })
+  async streamQuestion(
+    @Body() body: ChatRequestDto,
+    @Res() res: Response
+  ): Promise<void> {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    if (typeof (res as any).flushHeaders === "function") {
+      (res as any).flushHeaders();
+    }
 
-  @Get("channels/:channelId/messages")
-  @ApiOperation({ summary: "Get message history for a channel" })
-  getChannelMessages(
-    @Param("channelId") channelId: string,
-    @CurrentUser() user: any,
-    @Query("limit") limit?: string
-  ) {
-    return this.chatService.getChannelMessages(channelId, user.id, limit ? parseInt(limit, 10) : 50);
-  }
+    await this.chatService.streamQuestion(body, (chunk) => {
+      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+    });
 
-  @Post("channels/:channelId/messages")
-  @ApiOperation({ summary: "Post a message to a channel" })
-  postMessage(
-    @Param("channelId") channelId: string,
-    @CurrentUser() user: any,
-    @Body() dto: PostMessageDto
-  ) {
-    return this.chatService.postMessage(channelId, user.id, dto);
+    res.end();
   }
 }
