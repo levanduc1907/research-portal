@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from "@nestjs/common";
-import { PrismaClient } from "@repo/database";
+import { PrismaClient, createPrismaAdapter } from "@repo/database";
 
 @Injectable()
 export class PrismaService
@@ -8,6 +8,16 @@ export class PrismaService
 {
   private readonly logger = new Logger(PrismaService.name);
   public readonly client: PrismaClient = this;
+
+  constructor() {
+    super({
+      adapter: createPrismaAdapter(),
+      log:
+        process.env.NODE_ENV === "development"
+          ? ["query", "error", "warn"]
+          : ["error"],
+    });
+  }
 
   async onModuleInit() {
     try {

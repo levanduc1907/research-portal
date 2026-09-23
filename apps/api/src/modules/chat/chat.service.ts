@@ -5,17 +5,22 @@ import {
   ChatRequestDto,
   ChatResponseDto,
 } from "@repo/contracts";
+import { AiCredentialsService } from "../ai-providers/ai-credentials.service";
 
 @Injectable()
 export class ChatService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly aiCredentials: AiCredentialsService,
+  ) {}
 
   private classifyQuestion(query: string): {
     route: "STRUCTURED" | "SEMANTIC" | "HYBRID" | "UNSUPPORTED";
     keywords: string[];
   } {
     const q = query.trim().toLowerCase();
-    let route: "STRUCTURED" | "SEMANTIC" | "HYBRID" | "UNSUPPORTED" = "SEMANTIC";
+    let route: "STRUCTURED" | "SEMANTIC" | "HYBRID" | "UNSUPPORTED" =
+      "SEMANTIC";
 
     const isCountOrAgg =
       q.includes("how many") ||
@@ -66,7 +71,7 @@ export class ChatService {
             "illinois",
             "tell",
             "give",
-          ].includes(w)
+          ].includes(w),
       );
 
     return { route, keywords };
@@ -74,7 +79,7 @@ export class ChatService {
 
   private async retrieveEvidence(
     route: string,
-    keywords: string[]
+    keywords: string[],
   ): Promise<{
     evidencePapers: {
       id: string;
@@ -164,7 +169,7 @@ export class ChatService {
   private composeGroundedAnswer(
     query: string,
     route: string,
-    evidencePapers: any[]
+    evidencePapers: any[],
   ): string {
     const q = query.toLowerCase();
     if (route === "STRUCTURED") {
@@ -190,7 +195,7 @@ export class ChatService {
         evidencePapers.find(
           (e) =>
             e.title.toLowerCase().includes("knowledge") ||
-            e.title.toLowerCase().includes("text")
+            e.title.toLowerCase().includes("text"),
         ) || evidencePapers[0];
       return `UIUC computer scientists actively develop graph-guided foundation models for scientific text extraction. As demonstrated in "${p.title}" (${p.publicationYear}), the approach constructs dual knowledge graphs to systematically verify factual assertions against 200,000 published research papers, significantly mitigating hallucinations.`;
     } else if (
@@ -204,10 +209,14 @@ export class ChatService {
         evidencePapers.find(
           (e) =>
             e.title.toLowerCase().includes("memory") ||
-            e.title.toLowerCase().includes("parallel")
+            e.title.toLowerCase().includes("parallel"),
         ) || evidencePapers[0];
       return `UIUC has deep historical strengths in high-performance computing and supercomputing hardware. In "${p.title}" (${p.publicationYear}), researchers introduced a novel memory consistency model that reduces communication latency by 37% across heterogeneous GPU and NPU accelerator architectures.`;
-    } else if (q.includes("robot") || q.includes("motion") || q.includes("swarm")) {
+    } else if (
+      q.includes("robot") ||
+      q.includes("motion") ||
+      q.includes("swarm")
+    ) {
       return `In robotics and autonomous systems, UIUC researchers focus on scalable multi-robot motion planning under dynamic kinematic constraints. Recent studies present distributed sampling algorithms capable of coordinating agent swarms in constrained 3D spaces with bounded convergence guarantees.`;
     } else {
       return `According to verified University of Illinois Urbana-Champaign research publications, faculty researchers are actively pushing boundaries in high-performance computing, artificial intelligence, and agricultural biotechnology. A prime reference is "${evidencePapers[0]?.title}" (${evidencePapers[0]?.publicationYear}), exploring novel acceleration and modeling techniques.`;
@@ -261,11 +270,13 @@ export class ChatService {
       sources?: ChatCitationDto[];
       route?: string;
       done?: boolean;
-    }) => void
+    }) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     const startTime = Date.now();
     const { route, keywords } = this.classifyQuestion(dto.query);
     const { evidencePapers } = await this.retrieveEvidence(route, keywords);
+    if (signal?.aborted) return;
 
     const sources: ChatCitationDto[] = evidencePapers.map((p) => ({
       paperId: p.id,
@@ -278,29 +289,98 @@ export class ChatService {
     // Send metadata header first
     onChunk({ route, sources });
 
-    const fullAnswer = this.composeGroundedAnswer(dto.query, route, evidencePapers);
+    const fallbackAnswer = this.composeGroundedAnswer(
+      dto.query,
+      route,
+      evidencePapers,
+    );
+
+    const evidence = evidencePapers
+      .map(
+        (paper, index) =>
+          `[${index + 1}] ${paper.title} (${paper.publicationYear})\n${paper.abstract || "No abstract available."}`,
+      )
+      .join("\n\n");
+    const prompt = [
+      "You are the University of Illinois research assistant.",
+      "Answer only from the supplied evidence. If evidence is insufficient, say so clearly.",
+      "Use concise prose and cite sources with [1], [2], etc.",
+      `Question: ${dto.query}`,
+      `Evidence:\n${evidence}`,
+    ].join("\n\n");
+
+    let providerText = "";
+    try {
+      const usedProvider = await this.aiCredentials.streamDefault(
+        prompt,
+        (token) => {
+          providerText += token;
+          onChunk({ token });
+        },
+        signal,
+      );
+      if (usedProvider) {
+        if (!signal?.aborted) onChunk({ done: true });
+        await this.logChatRequest(
+          dto.query,
+          route,
+          providerText,
+          sources,
+          startTime,
+        );
+        return;
+      }
+    } catch {
+      if (providerText) {
+        if (!signal?.aborted) onChunk({ done: true });
+        await this.logChatRequest(
+          dto.query,
+          route,
+          providerText,
+          sources,
+          startTime,
+        );
+        return;
+      }
+    }
 
     // Break text into realistic tokens/words
-    const tokens = fullAnswer.match(/(\S+\s*|\s+)/g) || [fullAnswer];
+    const tokens = fallbackAnswer.match(/(\S+\s*|\s+)/g) || [fallbackAnswer];
 
     for (const token of tokens) {
+      if (signal?.aborted) return;
       onChunk({ token });
       // Realistic ChatGPT streaming cadence (20ms per token)
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
 
-    const latencyMs = Date.now() - startTime;
+    if (signal?.aborted) return;
     onChunk({ done: true });
 
-    // Asynchronously log the request
+    await this.logChatRequest(
+      dto.query,
+      route,
+      fallbackAnswer,
+      sources,
+      startTime,
+    );
+  }
+
+  private async logChatRequest(
+    query: string,
+    route: string,
+    response: string,
+    sources: ChatCitationDto[],
+    startTime: number,
+  ): Promise<void> {
     try {
       await this.prisma.chatRequest.create({
         data: {
-          query: dto.query,
+          query,
           route: route as any,
-          response: fullAnswer,
+          response,
           citations: sources as any,
-          latencyMs,
+          latencyMs: Date.now() - startTime,
         },
       });
     } catch {

@@ -60,7 +60,7 @@ export function AnalyticsSection({
               }`}
             >
               <TrendingUp className="w-3.5 h-3.5" />
-              <span>5-Year Trends (2022–2026)</span>
+              <span>5-Year Trends (2022-2026)</span>
             </button>
           </div>
         </div>

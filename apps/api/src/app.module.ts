@@ -6,6 +6,7 @@ import { AnalyticsModule } from "./modules/analytics/analytics.module";
 import { PaperModule } from "./modules/papers/papers.module";
 import { ResearcherModule } from "./modules/researchers/researchers.module";
 import { ChatModule } from "./modules/chat/chat.module";
+import { AiProvidersModule } from "./modules/ai-providers/ai-providers.module";
 import { HealthController } from "./modules/health/health.controller";
 
 @Module({
@@ -19,6 +20,7 @@ import { HealthController } from "./modules/health/health.controller";
     PaperModule,
     ResearcherModule,
     ChatModule,
+    AiProvidersModule,
   ],
   controllers: [HealthController],
 })

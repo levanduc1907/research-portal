@@ -12,6 +12,7 @@
   "dependencies": {
     "@repo/contracts": "workspace:*",
     "@repo/ui": "workspace:*",
+    "@tanstack/react-query": "^5.102.8",
     "clsx": "2.1.1",
     "date-fns": "^4.1.0",
     "lucide-react": "catalog:",
@@ -20,6 +21,7 @@
     "qrcode.react": "^4.2.0",
     "react": "catalog:react19",
     "react-dom": "catalog:react19",
+    "react-icons": "^5.7.0",
     "socket.io-client": "^4.8.1",
     "tailwind-merge": "^3.3.1"
   },

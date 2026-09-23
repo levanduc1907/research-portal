@@ -1,6 +1,6 @@
-import { Body, Controller, Post, Res } from "@nestjs/common";
+import { Body, Controller, Post, Req, Res } from "@nestjs/common";
 import { ApiOperation, ApiTags } from "@nestjs/swagger";
-import { Response } from "express";
+import { Request, Response } from "express";
 import { ChatService } from "./chat.service";
 import { ChatRequestDto, ChatResponseDto } from "@repo/contracts";
 
@@ -10,7 +10,9 @@ export class ChatController {
   constructor(private readonly chatService: ChatService) {}
 
   @Post()
-  @ApiOperation({ summary: "Ask a question about recent UIUC research (unary)" })
+  @ApiOperation({
+    summary: "Ask a question about recent UIUC research (unary)",
+  })
   async askQuestion(@Body() body: ChatRequestDto): Promise<ChatResponseDto> {
     return this.chatService.processQuestion(body);
   }
@@ -22,19 +24,31 @@ export class ChatController {
   })
   async streamQuestion(
     @Body() body: ChatRequestDto,
-    @Res() res: Response
+    @Req() req: Request,
+    @Res() res: Response,
   ): Promise<void> {
     res.setHeader("Content-Type", "text/event-stream");
-    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
     res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
     if (typeof (res as any).flushHeaders === "function") {
       (res as any).flushHeaders();
     }
 
-    await this.chatService.streamQuestion(body, (chunk) => {
-      res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-    });
+    const controller = new AbortController();
+    req.on("aborted", () => controller.abort());
+    res.on("close", () => controller.abort());
 
-    res.end();
+    await this.chatService.streamQuestion(
+      body,
+      (chunk) => {
+        if (res.writableEnded || controller.signal.aborted) return;
+        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        (res as Response & { flush?: () => void }).flush?.();
+      },
+      controller.signal,
+    );
+
+    if (!res.writableEnded) res.end();
   }
 }

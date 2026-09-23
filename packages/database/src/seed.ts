@@ -125,10 +125,17 @@ async function main() {
       department: "Computer Science",
       title: "Michael Aiken Chair Professor",
       bio: "World-renowned pioneer in data mining, text mining, and information network analysis.",
-      profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/hanj",
+      profileUrl:
+        "https://siebelschool.illinois.edu/about/people/all-faculty/hanj",
       worksCount: 950,
       citedByCount: 198000,
-      keywords: ["Data Mining", "Text Mining", "Information Networks", "LLM Extraction", "Knowledge Graphs"],
+      keywords: [
+        "Data Mining",
+        "Text Mining",
+        "Information Networks",
+        "LLM Extraction",
+        "Knowledge Graphs",
+      ],
     },
     {
       name: "Dr. Sarita Adve",
@@ -136,10 +143,16 @@ async function main() {
       department: "Computer Science",
       title: "Richard T. Cheng Professor",
       bio: "Pioneering computer architect leading Illinois XR and memory consistency models research.",
-      profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/sadve",
+      profileUrl:
+        "https://siebelschool.illinois.edu/about/people/all-faculty/sadve",
       worksCount: 220,
       citedByCount: 24000,
-      keywords: ["Computer Architecture", "Memory Consistency", "Extended Reality (XR)", "Parallel Computing"],
+      keywords: [
+        "Computer Architecture",
+        "Memory Consistency",
+        "Extended Reality (XR)",
+        "Parallel Computing",
+      ],
     },
     {
       name: "Dr. Marc Snir",
@@ -147,10 +160,16 @@ async function main() {
       department: "Computer Science",
       title: "Professor Emeritus",
       bio: "Key contributor to the Message Passing Interface (MPI) standard and scalable supercomputing architecture.",
-      profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/snir",
+      profileUrl:
+        "https://siebelschool.illinois.edu/about/people/all-faculty/snir",
       worksCount: 310,
       citedByCount: 29000,
-      keywords: ["High Performance Computing", "MPI", "Supercomputing", "Parallel Algorithms"],
+      keywords: [
+        "High Performance Computing",
+        "MPI",
+        "Supercomputing",
+        "Parallel Algorithms",
+      ],
     },
     {
       name: "Dr. Nancy M. Amato",
@@ -158,10 +177,16 @@ async function main() {
       department: "Computer Science",
       title: "Abel Bliss Professor & Department Head",
       bio: "Leading researcher in motion planning, robotics, computational biology, and parallel computing.",
-      profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/namato",
+      profileUrl:
+        "https://siebelschool.illinois.edu/about/people/all-faculty/namato",
       worksCount: 380,
       citedByCount: 21500,
-      keywords: ["Robotics", "Motion Planning", "Computational Biology", "Parallel Algorithms"],
+      keywords: [
+        "Robotics",
+        "Motion Planning",
+        "Computational Biology",
+        "Parallel Algorithms",
+      ],
     },
     {
       name: "Dr. Klara Nahrstedt",
@@ -169,10 +194,16 @@ async function main() {
       department: "Computer Science",
       title: "Ralph and Catherine Fisher Professor",
       bio: "Expert in distributed multimedia systems, tele-immersive environments, and edge computing.",
-      profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/klara",
+      profileUrl:
+        "https://siebelschool.illinois.edu/about/people/all-faculty/klara",
       worksCount: 420,
       citedByCount: 31000,
-      keywords: ["Multimedia Systems", "Edge Computing", "Tele-immersion", "IoT Security"],
+      keywords: [
+        "Multimedia Systems",
+        "Edge Computing",
+        "Tele-immersion",
+        "IoT Security",
+      ],
     },
     {
       name: "Dr. Stephen Long",
@@ -183,7 +214,12 @@ async function main() {
       profileUrl: "https://cropsciences.illinois.edu/directory/profile/slong",
       worksCount: 460,
       citedByCount: 45000,
-      keywords: ["Photosynthesis", "Crop Yield", "Climate Change Mitigation", "Bioenergy Crops"],
+      keywords: [
+        "Photosynthesis",
+        "Crop Yield",
+        "Climate Change Mitigation",
+        "Bioenergy Crops",
+      ],
     },
   ];
 
@@ -204,16 +240,40 @@ async function main() {
       },
     });
   }
-  console.log(`✅ Seeded ${researchersData.length} faculty researchers with keywords`);
+  console.log(
+    `✅ Seeded ${researchersData.length} faculty researchers with keywords`,
+  );
 
   // 4. Seed Authors
   const authorsData = [
-    { openalexId: "https://openalex.org/A5012345671", displayName: "Jiawei Han" },
-    { openalexId: "https://openalex.org/A5012345672", displayName: "Sarita Adve" },
-    { openalexId: "https://openalex.org/A5012345673", displayName: "Marc Snir" },
-    { openalexId: "https://openalex.org/A5012345674", displayName: "Nancy M. Amato" },
-    { openalexId: "https://openalex.org/A5012345675", displayName: "Stephen Long" },
-    { openalexId: "https://openalex.org/A5012345676", displayName: "ChengXiang Zhai" },
+    {
+      openalexId: "https://openalex.org/A5012345671",
+      displayName: "Jiawei Han",
+    },
+    {
+      openalexId: "https://openalex.org/A5012345672",
+      displayName: "Sarita Adve",
+    },
+    {
+      openalexId: "https://openalex.org/A5012345673",
+      displayName: "Marc Snir",
+    },
+    {
+      openalexId: "https://openalex.org/A5012345674",
+      displayName: "Nancy M. Amato",
+    },
+    {
+      openalexId: "https://openalex.org/A5012345675",
+      displayName: "Stephen Long",
+    },
+    {
+      openalexId: "https://openalex.org/A5012345676",
+      displayName: "ChengXiang Zhai",
+    },
+    {
+      openalexId: "https://openalex.org/A5012345677",
+      displayName: "Klara Nahrstedt",
+    },
   ];
 
   const authorMap: Record<string, string> = {};
@@ -226,12 +286,27 @@ async function main() {
     authorMap[a.displayName] = author.id;
   }
 
+  for (const researcher of researchersData) {
+    const displayName = researcher.name.replace(/^Dr\.\s*/, "");
+    const authorId = authorMap[displayName];
+    if (!authorId) {
+      throw new Error(
+        `Missing seeded author for researcher ${researcher.name}`,
+      );
+    }
+    await prisma.researcher.update({
+      where: { email: researcher.email },
+      data: { authorId },
+    });
+  }
+
   // 5. Seed Notable Recent Papers (2024-2026)
   const papersData = [
     {
       openalexId: "https://openalex.org/W4391823901",
       doi: "https://doi.org/10.1145/3613904.3642100",
-      title: "Optimizing Massive Scale Memory Consistency for Heterogeneous AI Accelerators",
+      title:
+        "Optimizing Massive Scale Memory Consistency for Heterogeneous AI Accelerators",
       publicationDate: new Date("2025-04-12"),
       publicationYear: 2025,
       citedByCount: 48,
@@ -239,12 +314,16 @@ async function main() {
         "Modern deep learning workloads necessitate tightly coupled hardware accelerators. In this work, UIUC researchers present an optimized memory consistency model that reduces latency by 37% across heterogeneous GPU-NPU interconnects.",
       landingPageUrl: "https://doi.org/10.1145/3613904.3642100",
       topicName: "Parallel Computing and Optimization Techniques",
-      authors: [{ name: "Sarita Adve", position: "first" }, { name: "Marc Snir", position: "last" }],
+      authors: [
+        { name: "Sarita Adve", position: "first" },
+        { name: "Marc Snir", position: "last" },
+      ],
     },
     {
       openalexId: "https://openalex.org/W4391823902",
       doi: "https://doi.org/10.18653/v1/2025.findings-acl.12",
-      title: "Autonomous Knowledge Extraction from Scientific Text Using Graph Guided Foundation Models",
+      title:
+        "Autonomous Knowledge Extraction from Scientific Text Using Graph Guided Foundation Models",
       publicationDate: new Date("2025-07-20"),
       publicationYear: 2025,
       citedByCount: 89,
@@ -252,12 +331,16 @@ async function main() {
         "Extracting structured scientific facts from multidisciplinary literature is hindered by hallucination. We present a dual graph-guided prompt framework that retrieves grounding evidence and verifies factual assertions across 200,000 papers.",
       landingPageUrl: "https://doi.org/10.18653/v1/2025.findings-acl.12",
       topicName: "Topic Modeling and Natural Language Processing",
-      authors: [{ name: "Jiawei Han", position: "first" }, { name: "ChengXiang Zhai", position: "last" }],
+      authors: [
+        { name: "Jiawei Han", position: "first" },
+        { name: "ChengXiang Zhai", position: "last" },
+      ],
     },
     {
       openalexId: "https://openalex.org/W4391823903",
       doi: "https://doi.org/10.1126/science.ade4502",
-      title: "Engineering Enhanced Photosynthetic Pathways for Elevated Atmospheric CO2 Resilience in Crops",
+      title:
+        "Engineering Enhanced Photosynthetic Pathways for Elevated Atmospheric CO2 Resilience in Crops",
       publicationDate: new Date("2024-09-15"),
       publicationYear: 2024,
       citedByCount: 142,
@@ -270,7 +353,8 @@ async function main() {
     {
       openalexId: "https://openalex.org/W4391823904",
       doi: "https://doi.org/10.1109/ICRA.2025.1012345",
-      title: "Scalable Multi-Robot Motion Planning under Dynamic Kinematic Constraints in Complex Environments",
+      title:
+        "Scalable Multi-Robot Motion Planning under Dynamic Kinematic Constraints in Complex Environments",
       publicationDate: new Date("2025-05-18"),
       publicationYear: 2025,
       citedByCount: 34,
@@ -283,7 +367,8 @@ async function main() {
     {
       openalexId: "https://openalex.org/W4391823905",
       doi: "https://doi.org/10.1103/PhysRevLett.134.020401",
-      title: "Topological Quantum States in Strained 2D Semiconductor Heterostructures",
+      title:
+        "Topological Quantum States in Strained 2D Semiconductor Heterostructures",
       publicationDate: new Date("2026-01-10"),
       publicationYear: 2026,
       citedByCount: 19,
@@ -296,7 +381,8 @@ async function main() {
     {
       openalexId: "https://openalex.org/W4391823906",
       doi: "https://doi.org/10.1145/3639478.3643033",
-      title: "Near-Memory Computing Architecture for Real-Time Extended Reality Workloads",
+      title:
+        "Near-Memory Computing Architecture for Real-Time Extended Reality Workloads",
       publicationDate: new Date("2024-11-05"),
       publicationYear: 2024,
       citedByCount: 63,
@@ -354,7 +440,9 @@ async function main() {
       }
     }
   }
-  console.log(`✅ Seeded ${papersData.length} papers with authors and topic links`);
+  console.log(
+    `✅ Seeded ${papersData.length} papers with authors and topic links`,
+  );
 
   // 6. Record Seed Ingestion Run
   await prisma.importRun.create({

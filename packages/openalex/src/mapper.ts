@@ -82,13 +82,15 @@ export function mapOpenAlexWork(raw: OpenAlexWorkRaw): NormalizedWork {
   const landingPageUrl = raw.primary_location?.landing_page_url || raw.doi || null;
   const pdfUrl = raw.primary_location?.pdf_url || null;
 
-  const authors = (raw.authorships || []).map((a) => ({
-    openalexId: a.author.id,
-    displayName: a.author.display_name || "Unknown Author",
-    orcid: a.author.orcid || null,
-    position: a.author_position || "middle",
-    isCorresponding: Boolean(a.is_corresponding),
-  }));
+  const authors = (raw.authorships || [])
+    .filter((a) => Boolean(a.author && a.author.id))
+    .map((a) => ({
+      openalexId: a.author.id,
+      displayName: a.author.display_name || "Unknown Author",
+      orcid: a.author.orcid || null,
+      position: a.author_position || "middle",
+      isCorresponding: Boolean(a.is_corresponding),
+    }));
 
   const primaryTopicId = raw.primary_topic?.id;
   const topicsMap = new Map<string, NormalizedWork["topics"][number]>();

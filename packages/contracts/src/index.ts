@@ -137,3 +137,40 @@ export interface ChatResponseDto {
   confidence: "high" | "medium" | "low";
   latencyMs: number;
 }
+
+export type AiProvider = "OPENAI" | "GEMINI" | "OPENAI_COMPATIBLE";
+
+export interface AiCredentialDto {
+  id: string;
+  name: string;
+  provider: AiProvider;
+  keyHint: string;
+  baseUrl: string | null;
+  defaultModel: string;
+  isActive: boolean;
+  isDefault: boolean;
+  lastTestedAt: string | null;
+  lastTestStatus: "success" | "failed" | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateAiCredentialDto {
+  name: string;
+  provider: AiProvider;
+  apiKey: string;
+  baseUrl?: string;
+  defaultModel: string;
+  isActive?: boolean;
+  isDefault?: boolean;
+}
+
+export interface UpdateAiCredentialDto {
+  name?: string;
+  apiKey?: string;
+  baseUrl?: string | null;
+  defaultModel?: string;
+  isActive?: boolean;
+  isDefault?: boolean;
+}

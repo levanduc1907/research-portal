@@ -18,9 +18,17 @@ export class ResearchersController {
     @Query("query") query?: string,
     @Query("department") department?: string,
     @Query("page") page?: number,
-    @Query("limit") limit?: number
+    @Query("limit") limit?: number,
   ): Promise<PaginatedResult<ResearcherDto>> {
     return this.researchersService.findAll({ query, department, page, limit });
+  }
+
+  @Get("departments")
+  @ApiOperation({
+    summary: "List departments available for researcher filtering",
+  })
+  async findDepartments(): Promise<string[]> {
+    return this.researchersService.findDepartments();
   }
 
   @Get(":id")

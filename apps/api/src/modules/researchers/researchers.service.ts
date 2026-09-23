@@ -11,11 +11,18 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
     department: "Computer Science",
     title: "Michael Aiken Chair Professor",
     bio: "World-renowned pioneer in data mining, text mining, and information network analysis.",
-    profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/hanj",
+    profileUrl:
+      "https://siebelschool.illinois.edu/about/people/all-faculty/hanj",
     photoUrl: null,
     worksCount: 950,
     citedByCount: 198000,
-    keywords: ["Data Mining", "Text Mining", "Information Networks", "LLM Extraction", "Knowledge Graphs"],
+    keywords: [
+      "Data Mining",
+      "Text Mining",
+      "Information Networks",
+      "LLM Extraction",
+      "Knowledge Graphs",
+    ],
   },
   {
     id: "r-2",
@@ -25,11 +32,17 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
     department: "Computer Science",
     title: "Richard T. Cheng Professor",
     bio: "Pioneering computer architect leading Illinois XR and memory consistency models research.",
-    profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/sadve",
+    profileUrl:
+      "https://siebelschool.illinois.edu/about/people/all-faculty/sadve",
     photoUrl: null,
     worksCount: 220,
     citedByCount: 24000,
-    keywords: ["Computer Architecture", "Memory Consistency", "Extended Reality (XR)", "Parallel Computing"],
+    keywords: [
+      "Computer Architecture",
+      "Memory Consistency",
+      "Extended Reality (XR)",
+      "Parallel Computing",
+    ],
   },
   {
     id: "r-3",
@@ -39,11 +52,17 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
     department: "Computer Science",
     title: "Professor Emeritus",
     bio: "Key contributor to the Message Passing Interface (MPI) standard and scalable supercomputing architecture.",
-    profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/snir",
+    profileUrl:
+      "https://siebelschool.illinois.edu/about/people/all-faculty/snir",
     photoUrl: null,
     worksCount: 310,
     citedByCount: 29000,
-    keywords: ["High Performance Computing", "MPI", "Supercomputing", "Parallel Algorithms"],
+    keywords: [
+      "High Performance Computing",
+      "MPI",
+      "Supercomputing",
+      "Parallel Algorithms",
+    ],
   },
   {
     id: "r-4",
@@ -53,11 +72,17 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
     department: "Computer Science",
     title: "Abel Bliss Professor & Department Head",
     bio: "Leading researcher in motion planning, robotics, computational biology, and parallel computing.",
-    profileUrl: "https://siebelschool.illinois.edu/about/people/all-faculty/namato",
+    profileUrl:
+      "https://siebelschool.illinois.edu/about/people/all-faculty/namato",
     photoUrl: null,
     worksCount: 380,
     citedByCount: 21500,
-    keywords: ["Robotics", "Motion Planning", "Computational Biology", "Parallel Algorithms"],
+    keywords: [
+      "Robotics",
+      "Motion Planning",
+      "Computational Biology",
+      "Parallel Algorithms",
+    ],
   },
   {
     id: "r-5",
@@ -71,7 +96,12 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
     photoUrl: null,
     worksCount: 460,
     citedByCount: 45000,
-    keywords: ["Photosynthesis", "Crop Yield", "Climate Change Mitigation", "Bioenergy Crops"],
+    keywords: [
+      "Photosynthesis",
+      "Crop Yield",
+      "Climate Change Mitigation",
+      "Bioenergy Crops",
+    ],
   },
 ];
 
@@ -104,7 +134,7 @@ export class ResearchersService {
       }
 
       if (params.department) {
-        where.department = { contains: params.department };
+        where.department = params.department;
       }
 
       const [total, records] = await Promise.all([
@@ -114,7 +144,7 @@ export class ResearchersService {
           skip,
           take: limit,
           orderBy: { citedByCount: "desc" },
-          include: { keywords: true },
+          include: { keywords: true, author: true },
         }),
       ]);
 
@@ -124,7 +154,7 @@ export class ResearchersService {
 
       const data: ResearcherDto[] = records.map((r) => ({
         id: r.id,
-        openalexId: r.openalexId,
+        openalexId: r.author?.openalexId ?? r.openalexId,
         name: r.name,
         email: r.email,
         department: r.department,
@@ -155,11 +185,24 @@ export class ResearchersService {
     }
   }
 
+  async findDepartments(): Promise<string[]> {
+    const records = await this.prisma.researcher.findMany({
+      where: { department: { not: null } },
+      distinct: ["department"],
+      select: { department: true },
+      orderBy: { department: "asc" },
+    });
+
+    return records
+      .map((record) => record.department?.trim())
+      .filter((department): department is string => Boolean(department));
+  }
+
   async findById(id: string): Promise<ResearcherDto> {
     try {
       const record = await this.prisma.researcher.findUnique({
         where: { id },
-        include: { keywords: true },
+        include: { keywords: true, author: true },
       });
 
       if (!record) {
@@ -170,7 +213,7 @@ export class ResearchersService {
 
       return {
         id: record.id,
-        openalexId: record.openalexId,
+        openalexId: record.author?.openalexId ?? record.openalexId,
         name: record.name,
         email: record.email,
         department: record.department,
@@ -193,7 +236,7 @@ export class ResearchersService {
   private filterFallback(
     params: { query?: string; department?: string },
     page: number,
-    limit: number
+    limit: number,
   ): PaginatedResult<ResearcherDto> {
     let filtered = [...FALLBACK_RESEARCHERS];
 
@@ -203,14 +246,14 @@ export class ResearchersService {
         (r) =>
           r.name.toLowerCase().includes(q) ||
           (r.bio && r.bio.toLowerCase().includes(q)) ||
-          r.keywords.some((k) => k.toLowerCase().includes(q))
+          r.keywords.some((k) => k.toLowerCase().includes(q)),
       );
     }
 
     if (params.department) {
       const d = params.department.toLowerCase();
       filtered = filtered.filter(
-        (r) => r.department && r.department.toLowerCase().includes(d)
+        (r) => r.department && r.department.toLowerCase().includes(d),
       );
     }
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Montserrat, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider } from "../components/theme-provider";
+import { QueryProvider } from "../components/providers/query-provider";
 import React from "react";
 
 // Official UIUC Brand Typography: Montserrat (Headlines) & Source Sans 3 (Body)
@@ -22,7 +23,7 @@ const sourceSans = Source_Sans_3({
 export const metadata: Metadata = {
   title: "Research Portal | University of Illinois Urbana-Champaign",
   description:
-    "Official Research Intelligence Portal of the University of Illinois Urbana-Champaign (UIUC). Explore 20,000+ publications, active faculty research directories, citation analytics, and an AI Research Assistant grounded in OpenAlex scholarly records.",
+    "Discover researchers, areas of expertise, and scholarly profiles at the University of Illinois Urbana-Champaign.",
   icons: {
     icon: "/favicon.ico",
   },
@@ -34,12 +35,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
-    <html lang="en" suppressHydrationWarning className={`${montserrat.variable} ${sourceSans.variable}`}>
-      <body
-        className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#0A1120] dark:text-slate-100 antialiased selection:bg-[#FF5F05] selection:text-white"
-      >
+    <html
+      lang="en"
+      suppressHydrationWarning
+      className={`${montserrat.variable} ${sourceSans.variable}`}
+    >
+      <body className="min-h-screen bg-slate-50 text-slate-900 dark:bg-[#0A1120] dark:text-slate-100 antialiased selection:bg-[#FF5F05] selection:text-white">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          {children}
+          <QueryProvider>{children}</QueryProvider>
         </ThemeProvider>
       </body>
     </html>

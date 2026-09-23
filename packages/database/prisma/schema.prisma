@@ -1,10 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/client"
 }
 
 datasource db {
   provider = "mysql"
-  url      = env("DATABASE_URL")
 }
 
 enum ImportStatus {
@@ -75,6 +75,9 @@ model Paper {
   @@index([publicationDate])
   @@index([publicationYear])
   @@index([citedByCount])
+  @@index([publicationDate, id])
+  @@index([publicationYear, publicationDate, id])
+  @@index([citedByCount, id])
   @@index([primaryTopicId])
   @@map("papers")
 }
@@ -89,6 +92,7 @@ model Author {
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   papers      PaperAuthor[]
+  researcher  Researcher?
 
   @@map("authors")
 }
@@ -150,11 +154,14 @@ model PaperTopic {
 
 model Researcher {
   id             String   @id @default(uuid())
+  authorId       String?  @unique @map("author_id")
+  author         Author?  @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  // Transitional: remove after every legacy row has been linked through authorId.
   openalexId     String?  @unique @map("openalex_id")
   name           String
-  email          String?
+  email          String?  @unique
   department     String?
-  title          String?  // e.g. "Professor of Computer Science"
+  title          String?  @db.Text // e.g. "Professor of Computer Science"
   bio            String?  @db.Text
   profileUrl     String?  @db.Text @map("profile_url")
   photoUrl       String?  @db.Text @map("photo_url")
@@ -167,6 +174,8 @@ model Researcher {
 
   @@index([name])
   @@index([department])
+  @@index([citedByCount, id])
+  @@index([worksCount, id])
   @@map("researchers")
 }
 
@@ -196,6 +205,7 @@ model ImportRun {
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
   @@index([status])
+  @@index([source, status, updatedAt])
   @@map("import_runs")
 }
 
@@ -227,4 +237,27 @@ model ChatRequest {
   createdAt  DateTime   @default(now()) @map("created_at")
 
   @@map("chat_requests")
+}
+
+model AiCredential {
+  id              String    @id @default(uuid())
+  name            String    @unique
+  provider        String
+  encryptedApiKey String    @db.LongText @map("encrypted_api_key")
+  encryptionIv    String    @map("encryption_iv")
+  encryptionTag   String    @map("encryption_tag")
+  keyHint         String    @map("key_hint")
+  baseUrl         String?   @db.Text @map("base_url")
+  defaultModel    String    @map("default_model")
+  isActive        Boolean   @default(true) @map("is_active")
+  isDefault       Boolean   @default(false) @map("is_default")
+  lastTestedAt    DateTime? @map("last_tested_at")
+  lastTestStatus  String?   @map("last_test_status")
+  lastError       String?   @db.Text @map("last_error")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([provider, isActive])
+  @@index([isDefault])
+  @@map("ai_credentials")
 }

@@ -230,11 +230,17 @@ export class PapersService {
         };
       }
 
-      let orderBy: any = { publicationDate: "desc" };
+      let orderBy: any = [{ publicationDate: "desc" }, { id: "desc" }];
       if (query.sort === "citations") {
-        orderBy = { citedByCount: query.order === "asc" ? "asc" : "desc" };
+        orderBy = [
+          { citedByCount: query.order === "asc" ? "asc" : "desc" },
+          { id: query.order === "asc" ? "asc" : "desc" },
+        ];
       } else if (query.sort === "date") {
-        orderBy = { publicationDate: query.order === "asc" ? "asc" : "desc" };
+        orderBy = [
+          { publicationDate: query.order === "asc" ? "asc" : "desc" },
+          { id: query.order === "asc" ? "asc" : "desc" },
+        ];
       }
 
       const [total, records] = await Promise.all([

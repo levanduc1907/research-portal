@@ -93,7 +93,7 @@ export function PaperExplorer({
                     : "text-slate-600 dark:text-slate-400 hover:text-[#FF5F05]"
                 }`}
               >
-                Latest (2024–2026)
+                Latest (2024-2026)
               </button>
             </div>
           </div>

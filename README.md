@@ -123,3 +123,87 @@ Learn more about the power of Turborepo:
 Learn more about shadcn/ui:
 
 - [Documentation](https://ui.shadcn.com/docs)
+
+## Data Ingestion & OpenAlex Ingestion Pipeline
+
+### 1. Prerequisites
+
+Ensure your MySQL database is running and Prisma migrations are applied:
+
+```sh
+pnpm --filter @repo/database db:migrate:deploy
+```
+
+---
+
+### 2. Import 20,000 Papers from OpenAlex
+
+The worker pipeline uses OpenAlex API cursor-based deep pagination to ingest metadata, primary/subfield topics, and authorship records directly into the database.
+
+#### Run Commands
+
+```sh
+# Import only papers (default target: 20,000 papers)
+pnpm --filter worker import:papers
+
+# Or run full phase 2 ingestion (20,000 papers + 1,000 researchers from OpenAlex)
+pnpm --filter worker import:phase2
+```
+
+#### Environment Variables (`.env`)
+
+Configure the ingestion behavior with the following environment variables:
+
+```env
+# Target count of papers to ingest
+IMPORT_PAPER_TARGET=20000
+
+# Batch size per OpenAlex page (maximum allowed by OpenAlex is 200)
+IMPORT_BATCH_SIZE=200
+
+# Publication date filters: specify exact dates (YYYY-MM-DD) or fallback to year range
+# If IMPORT_FROM_DATE / IMPORT_TO_DATE are set, they take precedence over the year variables.
+IMPORT_FROM_DATE="2024-01-15"
+IMPORT_TO_DATE="2026-03-20"
+# IMPORT_FROM_YEAR=2024
+# IMPORT_TO_YEAR=2026
+
+# Target institution ID on OpenAlex (Default: UIUC - University of Illinois Urbana-Champaign)
+UIUC_OPENALEX_INSTITUTION_ID="I157725225"
+
+# Contact email to enter the OpenAlex Polite Pool (faster responses & lower rate limits)
+OPENALEX_CONTACT_EMAIL="your-email@illinois.edu"
+```
+
+#### Pipeline Features
+
+- **Cursor Pagination (`cursor=*`)**: Bypasses the 10,000 results limit of traditional page-number pagination.
+- **Idempotency & Resumability**: Every batch updates the pagination cursor and progress in the `import_runs` table. If interrupted, the job resumes from the latest saved cursor.
+- **Polite Pool & Retry Logic**: Automatically includes `mailto` headers and retries up to 4 times with exponential backoff on HTTP 429 and 5xx errors.
+- **Relational Mapping**: Maps and upserts into `paper`, `topic`, `paperTopic`, `author`, and `paperAuthor` tables.
+
+---
+
+### 3. Import Faculty / Researchers from CSV or TSV
+
+Faculty can alternatively be imported from a local CSV or TSV file.
+
+#### Run Command
+
+```sh
+pnpm --filter worker import:faculty:csv -- /absolute/path/to/faculty.csv
+```
+
+#### CSV / TSV Format & Columns
+
+Supports comma-separated (`,`) or tab-separated (`\t`) files. The following header columns are supported:
+
+| Column | Required | Description |
+| :--- | :--- | :--- |
+| `email` | **Yes** | Researcher email address (used as unique upsert key) |
+| `name` | **Yes** | Full name |
+| `position` | No | Faculty role / title (saved to `title`) |
+| `photo_url` | No | Profile photo URL |
+| `keywords` | No | Comma-separated research keywords |
+
+The job upserts records into `researcher`, updates associated keywords in `researcherKeyword`, and logs the status to `import_runs` with `source: "faculty_csv"`.

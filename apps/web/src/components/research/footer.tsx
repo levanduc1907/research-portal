@@ -1,112 +1,111 @@
-"use client";
-
-import React from "react";
-import { ExternalLink, Database, ShieldAlert, Heart, MapPin } from "lucide-react";
+import { ArrowUp, ExternalLink } from "lucide-react";
+import {
+  FaFacebookF,
+  FaInstagram,
+  FaLinkedinIn,
+  FaTiktok,
+  FaXTwitter,
+  FaYoutube,
+} from "react-icons/fa6";
 import { BlockILogo } from "./illinois-logo";
 
-export function Footer() {
+const socialLinks = [
+  { label: "Facebook", href: "https://www.facebook.com/Illinois1867", Icon: FaFacebookF },
+  { label: "Instagram", href: "https://www.instagram.com/illinois1867/", Icon: FaInstagram },
+  { label: "X", href: "https://x.com/Illinois_Alma", Icon: FaXTwitter },
+  { label: "LinkedIn", href: "https://www.linkedin.com/school/university-of-illinois-urbana-champaign/", Icon: FaLinkedinIn },
+  { label: "YouTube", href: "https://www.youtube.com/user/Illinois1867", Icon: FaYoutube },
+  { label: "TikTok", href: "https://www.tiktok.com/@illinois1867", Icon: FaTiktok },
+];
+
+const footerGroups = [
+  {
+    title: "Explore Campus",
+    links: [
+      ["University Admissions", "https://www.admissions.illinois.edu/"],
+      ["Careers at Illinois", "https://jobs.illinois.edu/"],
+      ["University News", "https://news.illinois.edu/"],
+      ["Visit Campus", "https://illinois.edu/visit/"],
+    ],
+  },
+  {
+    title: "Connect with Illinois",
+    links: [
+      ["University Alumni", "https://uiaa.org/"],
+      ["Giving at Illinois", "https://giving.illinois.edu/"],
+      ["University Calendars", "https://illinois.edu/resources/calendars.html"],
+      ["University Directory", "https://directory.illinois.edu/"],
+    ],
+  },
+  {
+    title: "Access University Resources",
+    links: [
+      ["Emergency Services", "https://police.illinois.edu/emergency-preparedness/"],
+      ["McKinley Health Center", "https://mckinley.illinois.edu/"],
+      ["Connie Frank CARE Center", "https://wecare.illinois.edu/"],
+      ["University Library", "https://www.library.illinois.edu/"],
+    ],
+  },
+] as const;
+
+const legalLinks = [
+  ["Privacy Policy", "https://www.vpaa.uillinois.edu/resources/web_privacy"],
+  ["Copyright", "https://illinois.edu/copyright/"],
+  ["Consumer Information", "https://provost.illinois.edu/student-consumer-information/"],
+  ["Website Feedback", "https://illinois.edu/about/contact.html"],
+  ["Accessibility", "https://illinois.edu/about/accessibility.html"],
+] as const;
+
+export function Footer(): React.JSX.Element {
   return (
-    <footer className="border-t-4 border-t-[#FF5F05] bg-[#13294B] text-slate-200 py-12">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-8 pb-8 border-b border-white/15">
-          {/* Col 1 */}
-          <div>
-            <div className="flex items-center gap-3 mb-3">
-              <BlockILogo className="w-6 h-7.5" withOutline={false} />
-              <div>
-                <span className="font-extrabold text-sm uppercase tracking-wider text-white font-heading">
-                  University of Illinois
-                </span>
-                <span className="block text-[11px] text-[#FF5F05] font-bold">
-                  Urbana-Champaign
-                </span>
-              </div>
-            </div>
-            <p className="text-xs leading-relaxed text-slate-300">
-              An open-access intelligence system presenting scholarship, active faculty
-              profiles, and citation analytics for the University of Illinois Urbana-Champaign.
-            </p>
-            <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-300 font-medium">
-              <MapPin className="w-3.5 h-3.5 text-[#FF5F05]" />
-              <span>Champaign-Urbana, Illinois 61820</span>
-            </div>
-          </div>
+    <footer className="portal-footer">
+      <nav className="footer-social" aria-label="Illinois social media">
+        {socialLinks.map(({ label, href, Icon }) => (
+          <a key={label} href={href} target="_blank" rel="noreferrer" aria-label={label}>
+            <Icon aria-hidden="true" />
+          </a>
+        ))}
+      </nav>
 
-          {/* Col 2 */}
-          <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-1.5 font-heading">
-              <Database className="w-3.5 h-3.5 text-[#FF5F05]" />
-              <span>Data Lineage & Provenance</span>
-            </h4>
-            <p className="text-xs leading-relaxed text-slate-300">
-              Publication records and topics are ingested and normalized from the{" "}
-              <a
-                href="https://openalex.org"
-                target="_blank"
-                rel="noreferrer"
-                className="underline text-white hover:text-[#FF5F05]"
-              >
-                OpenAlex
-              </a>{" "}
-              scholarly index under CC0 license. Institution ID:{" "}
-              <code className="rounded bg-white/10 px-1.5 py-0.5 text-[11px] font-mono text-[#FF5F05]">
-                I157725225
-              </code>
-              , ROR ID:{" "}
-              <code className="rounded bg-white/10 px-1.5 py-0.5 text-[11px] font-mono text-[#FF5F05]">
-                047426m28
-              </code>
-              .
-            </p>
-          </div>
-
-          {/* Col 3 */}
-          <div>
-            <h4 className="text-xs font-bold text-white uppercase tracking-wider mb-3 flex items-center gap-1.5 font-heading">
-              <ShieldAlert className="w-3.5 h-3.5 text-[#FF5F05]" />
-              <span>Model & Evidence Disclaimer</span>
-            </h4>
-            <p className="text-xs leading-relaxed text-slate-300">
-              AI assistant responses are generated using Retrieval-Augmented Generation (RAG)
-              grounded exclusively in verified OpenAlex publications and faculty metadata.
-            </p>
+      <div className="footer-main">
+        <div className="portal-container footer-main-inner">
+          <a className="footer-brand" href="https://illinois.edu/" target="_blank" rel="noreferrer">
+            <BlockILogo className="footer-block-i" />
+            <span>ILLINOIS</span>
+          </a>
+          <div className="footer-groups">
+            {footerGroups.map((group) => (
+              <section key={group.title}>
+                <h2>{group.title}</h2>
+                <ul>
+                  {group.links.map(([label, href]) => (
+                    <li key={label}>
+                      <a href={href} target="_blank" rel="noreferrer">{label}</a>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
           </div>
         </div>
+      </div>
 
-        {/* Bottom copyright */}
-        <div className="flex flex-col sm:flex-row items-center justify-between text-xs text-slate-400 gap-3">
-          <p>
-            © {new Date().getFullYear()} The Board of Trustees of the University of Illinois. All rights reserved.
-          </p>
-          <div className="flex items-center gap-4">
-            <a
-              href="https://illinois.edu"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white inline-flex items-center gap-1 transition-colors"
-            >
-              <span>illinois.edu</span>
-              <ExternalLink className="w-3 h-3 text-[#FF5F05]" />
-            </a>
-            <a
-              href="https://siebelschool.illinois.edu"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white inline-flex items-center gap-1 transition-colors"
-            >
-              <span>Siebel School of Computing</span>
-              <ExternalLink className="w-3 h-3 text-[#FF5F05]" />
-            </a>
-            <a
-              href="https://experts.illinois.edu"
-              target="_blank"
-              rel="noreferrer"
-              className="hover:text-white inline-flex items-center gap-1 transition-colors"
-            >
-              <span>Illinois Experts</span>
-              <ExternalLink className="w-3 h-3 text-[#FF5F05]" />
-            </a>
-          </div>
+      <div className="footer-legal">
+        <div className="portal-container footer-legal-inner">
+          <a className="footer-cookie-link" href="https://www.vpaa.uillinois.edu/resources/web_privacy" target="_blank" rel="noreferrer">
+            About Cookies
+          </a>
+          <nav aria-label="Legal information">
+            {legalLinks.map(([label, href]) => (
+              <a key={label} href={href} target="_blank" rel="noreferrer">
+                {label}
+                {label === "Website Feedback" ? <ExternalLink aria-hidden="true" size={13} /> : null}
+              </a>
+            ))}
+          </nav>
+          <a className="footer-to-top" href="#top" aria-label="Back to top">
+            <ArrowUp aria-hidden="true" />
+          </a>
         </div>
       </div>
     </footer>

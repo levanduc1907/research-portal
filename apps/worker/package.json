@@ -6,6 +6,11 @@
     "build": "nest build",
     "dev": "nest start --watch",
     "start": "node dist/main",
+    "import:papers": "nest start -- import-papers",
+    "import:faculty": "nest start -- import-faculty",
+    "import:faculty:csv": "nest start -- import-faculty-csv",
+    "link:researcher-authors": "nest start -- link-researcher-authors",
+    "import:phase2": "nest start -- import-phase2",
     "lint": "eslint . --max-warnings 0",
     "check-types": "tsc --noEmit"
   },
