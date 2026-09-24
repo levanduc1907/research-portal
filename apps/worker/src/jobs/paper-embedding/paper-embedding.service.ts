@@ -14,6 +14,7 @@ interface SyncResult {
   selected: number;
   processed: number;
   failed: number;
+  retryAfterMs?: number;
 }
 
 @Injectable()
@@ -90,7 +91,10 @@ export class PaperEmbeddingService
 
     try {
       await this.recoverStaleProcessingRecords();
-      const result = await this.syncAll(this.scheduledBatchSize);
+      const result = await this.processPendingPapers(
+        this.scheduledBatchSize,
+        true,
+      );
       if (result.selected > 0) {
         this.logger.log(
           `Scheduled vector sync: ${result.processed} completed, ${result.failed} failed`,
@@ -294,6 +298,17 @@ export class PaperEmbeddingService
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      const rateLimited = /quota|rate.?limit|too many requests|\b429\b/i.test(
+        message,
+      );
+      const retryMatch = message.match(/retry in\s+([\d.]+)s/i);
+      const retryAfterMs = Math.min(
+        60_000,
+        Math.max(
+          1_000,
+          Math.ceil(Number(retryMatch?.[1] || 60) * 1_000) + 1_000,
+        ),
+      );
       await this.prisma.$transaction(
         prepared.map(({ paper, contentHash }) =>
           this.prisma.embeddingRecord.updateMany({
@@ -303,17 +318,24 @@ export class PaperEmbeddingService
               status: "PROCESSING",
             },
             data: {
-              status: "FAILED",
+              status: rateLimited ? "PENDING" : "FAILED",
               errorMessage: message.slice(0, 65_535),
             },
           }),
         ),
       );
-      this.logger.error(`Vector sync batch failed: ${message}`);
+      if (rateLimited) {
+        this.logger.warn(
+          `Embedding quota reached; returned ${prepared.length} papers to PENDING and will retry after ${retryAfterMs}ms`,
+        );
+      } else {
+        this.logger.error(`Vector sync batch failed: ${message}`);
+      }
       return {
         selected: prepared.length,
         processed: 0,
-        failed: prepared.length,
+        failed: rateLimited ? 0 : prepared.length,
+        ...(rateLimited ? { retryAfterMs } : {}),
       };
     }
   }
@@ -322,6 +344,13 @@ export class PaperEmbeddingService
     const total: SyncResult = { selected: 0, processed: 0, failed: 0 };
     while (true) {
       const batch = await this.processPendingPapers(batchSize, retryFailed);
+      if (batch.retryAfterMs) {
+        this.logger.warn(
+          `Pausing vector sync for ${batch.retryAfterMs}ms to respect provider quota`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, batch.retryAfterMs));
+        continue;
+      }
       total.selected += batch.selected;
       total.processed += batch.processed;
       total.failed += batch.failed;
