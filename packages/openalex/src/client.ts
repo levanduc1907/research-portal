@@ -4,6 +4,7 @@ import { OpenAlexAuthorEntityRaw } from "./author-mapper";
 export interface OpenAlexClientOptions {
   baseUrl?: string;
   email?: string;
+  apiKey?: string;
   timeoutMs?: number;
   maxRetries?: number;
 }
@@ -27,12 +28,14 @@ export interface OpenAlexAuthorsResponse {
 export class OpenAlexClient {
   private readonly baseUrl: string;
   private readonly email?: string;
+  private readonly apiKey?: string;
   private readonly timeoutMs: number;
   private readonly maxRetries: number;
 
   constructor(options: OpenAlexClientOptions = {}) {
     this.baseUrl = options.baseUrl || "https://api.openalex.org";
     this.email = options.email || "ichikunana197@gmail.com";
+    this.apiKey = options.apiKey;
     this.timeoutMs = options.timeoutMs || 30_000;
     this.maxRetries = options.maxRetries ?? 4;
   }
@@ -64,6 +67,11 @@ export class OpenAlexClient {
           );
 
         const retryAfter = Number(response.headers.get("retry-after"));
+        if (response.status === 429 && retryAfter > 60) {
+          throw new Error(
+            `${label} rate limit budget is exhausted; retry after ${retryAfter}s or configure OPENALEX_API_KEY`,
+          );
+        }
         const delayMs =
           Number.isFinite(retryAfter) && retryAfter > 0
             ? retryAfter * 1_000
@@ -72,6 +80,9 @@ export class OpenAlexClient {
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (attempt === this.maxRetries) throw lastError;
+        if (lastError.message.includes("rate limit budget is exhausted")) {
+          throw lastError;
+        }
         if (
           /failed: 4\d\d/.test(lastError.message) &&
           !/failed: 429/.test(lastError.message)
@@ -93,6 +104,7 @@ export class OpenAlexClient {
       Accept: "application/json",
       "User-Agent": `UIUCResearchPortal/1.0 (mailto:${this.email})`,
     };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
     return headers;
   }
 

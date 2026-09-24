@@ -31,6 +31,7 @@ export class OpenAlexImportService {
     this.client = new OpenAlexClient({
       baseUrl: config.get<string>("OPENALEX_BASE_URL"),
       email: config.get<string>("OPENALEX_CONTACT_EMAIL"),
+      apiKey: config.get<string>("OPENALEX_API_KEY"),
     });
   }
 
@@ -116,6 +117,32 @@ export class OpenAlexImportService {
       .toLowerCase();
   }
 
+  private personNameScore(expected: string, candidate: string): number {
+    const expectedTokens = this.normalizePersonName(expected).split(" ");
+    const candidateTokens = this.normalizePersonName(candidate).split(" ");
+    if (expectedTokens.join(" ") === candidateTokens.join(" ")) return 100;
+    if (
+      expectedTokens.length === candidateTokens.length &&
+      [...expectedTokens].sort().join(" ") ===
+        [...candidateTokens].sort().join(" ")
+    ) {
+      return 98;
+    }
+    const expectedFirst = expectedTokens[0] || "";
+    const candidateFirst = candidateTokens[0] || "";
+    const expectedLast = expectedTokens.at(-1) || "";
+    const candidateLast = candidateTokens.at(-1) || "";
+    if (expectedLast !== candidateLast) return 0;
+    if (expectedFirst === candidateFirst) {
+      const overlap = expectedTokens.filter((token) =>
+        candidateTokens.includes(token),
+      ).length;
+      return 85 + Math.min(10, overlap * 2);
+    }
+    if (expectedFirst[0] && expectedFirst[0] === candidateFirst[0]) return 75;
+    return 0;
+  }
+
   private async upsertOpenAlexAuthor(
     raw: OpenAlexAuthorEntityRaw,
   ): Promise<string> {
@@ -143,19 +170,35 @@ export class OpenAlexImportService {
       search: name,
       perPage: 25,
     });
-    const expectedName = this.normalizePersonName(name);
-    const exactMatches = response.results.filter((candidate) =>
-      [candidate.display_name, ...(candidate.display_name_alternatives || [])]
-        .filter((value): value is string => Boolean(value))
-        .some((value) => this.normalizePersonName(value) === expectedName),
-    );
+    const ranked = response.results
+      .map((candidate) => ({
+        candidate,
+        score: Math.max(
+          ...[
+            candidate.display_name,
+            ...(candidate.display_name_alternatives || []),
+          ]
+            .filter((value): value is string => Boolean(value))
+            .map((value) => this.personNameScore(name, value)),
+        ),
+      }))
+      .filter((item) => item.score >= 85)
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          (right.candidate.works_count || 0) -
+            (left.candidate.works_count || 0),
+      );
 
-    if (exactMatches.length !== 1) {
+    if (
+      !ranked.length ||
+      ranked.filter((item) => item.score === ranked[0].score).length !== 1
+    ) {
       throw new Error(
-        `Cannot uniquely resolve OpenAlex author for "${name}": found ${exactMatches.length} exact UIUC matches`,
+        `Cannot uniquely resolve an OpenAlex UIUC author for "${name}" with a safe name score`,
       );
     }
-    return exactMatches[0];
+    return ranked[0].candidate;
   }
 
   private async upsertTopic(
@@ -688,19 +731,90 @@ export class OpenAlexImportService {
       orderBy: { createdAt: "asc" },
     });
     let totalImported = 0;
+    const failures: string[] = [];
 
     try {
+      const authors = await this.prisma.author.findMany({
+        select: { id: true, openalexId: true, displayName: true },
+      });
+      const authorsByName = new Map<string, typeof authors>();
+      for (const author of authors) {
+        const normalized = this.normalizePersonName(author.displayName);
+        authorsByName.set(normalized, [
+          ...(authorsByName.get(normalized) || []),
+          author,
+        ]);
+      }
+      const researcherNameCounts = new Map<string, number>();
       for (const researcher of researchers) {
-        const raw = await this.resolveOpenAlexAuthor(
-          researcher.name,
-          researcher.openalexId || undefined,
+        const normalized = this.normalizePersonName(researcher.name);
+        researcherNameCounts.set(
+          normalized,
+          (researcherNameCounts.get(normalized) || 0) + 1,
         );
-        const authorId = await this.upsertOpenAlexAuthor(raw);
-        await this.prisma.researcher.update({
-          where: { id: researcher.id },
-          data: { authorId, openalexId: raw.id },
+      }
+
+      const unresolved = [] as typeof researchers;
+      for (const researcher of researchers) {
+        const normalized = this.normalizePersonName(researcher.name);
+        const localMatches = authorsByName.get(normalized) || [];
+        if (
+          localMatches.length === 1 &&
+          researcherNameCounts.get(normalized) === 1
+        ) {
+          const author = localMatches[0];
+          await this.prisma.researcher.update({
+            where: { id: researcher.id },
+            data: { authorId: author.id, openalexId: author.openalexId },
+          });
+          totalImported++;
+        } else {
+          unresolved.push(researcher);
+        }
+      }
+      this.logger.log(
+        `Linked ${totalImported} researchers from local OpenAlex authors; resolving ${unresolved.length} through OpenAlex.`,
+      );
+
+      const concurrency = 5;
+      for (let index = 0; index < unresolved.length; index += concurrency) {
+        const batch = unresolved.slice(index, index + concurrency);
+        const results = await Promise.allSettled(
+          batch.map(async (researcher) => {
+            const raw = await this.resolveOpenAlexAuthor(
+              researcher.name,
+              researcher.openalexId || undefined,
+            );
+            const authorId = await this.upsertOpenAlexAuthor(raw);
+            await this.prisma.researcher.update({
+              where: { id: researcher.id },
+              data: { authorId, openalexId: raw.id },
+            });
+          }),
+        );
+        results.forEach((result, resultIndex) => {
+          if (result.status === "fulfilled") {
+            totalImported++;
+          } else {
+            failures.push(
+              `${batch[resultIndex].name}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+            );
+          }
         });
-        totalImported++;
+        const budgetFailure = results.find(
+          (result) =>
+            result.status === "rejected" &&
+            result.reason instanceof Error &&
+            result.reason.message.includes("rate limit budget is exhausted"),
+        );
+        if (budgetFailure?.status === "rejected") {
+          throw budgetFailure.reason;
+        }
+        if ((index + batch.length) % 25 === 0) {
+          this.logger.log(
+            `Researcher-author backfill: ${totalImported}/${researchers.length}`,
+          );
+        }
       }
 
       const unlinkedCount = await this.prisma.researcher.count({
@@ -708,7 +822,7 @@ export class OpenAlexImportService {
       });
       if (unlinkedCount !== 0) {
         throw new Error(
-          `${unlinkedCount} researchers remain without an OpenAlex author`,
+          `${unlinkedCount} researchers remain without an OpenAlex author. ${failures.slice(0, 10).join(" | ")}`,
         );
       }
 

@@ -66,6 +66,7 @@ export class PaperEmbeddingService
     if (this.syncRunning) return;
     this.syncRunning = true;
     try {
+      await this.qdrant.ensureCollection();
       // Status tracking does not require an API key: legacy/new papers first
       // become PENDING and remain visible there until embedding is available.
       await this.enqueuePapersWithoutStatus(this.scheduledBatchSize);
