@@ -61,41 +61,4 @@ export class GeminiAdapter implements AiProviderAdapter {
       if (token) onToken(token);
     });
   }
-
-  async embedTexts(
-    config: AiProviderConfig,
-    inputs: string[],
-    dimensions: number,
-  ): Promise<number[][]> {
-    const baseUrl =
-      config.baseUrl || "https://generativelanguage.googleapis.com/v1beta";
-    const modelName = config.model.replace(/^models\//, "");
-    const response = await fetch(
-      `${baseUrl}/models/${encodeURIComponent(modelName)}:batchEmbedContents`,
-      {
-        method: "POST",
-        headers: {
-          "x-goog-api-key": config.apiKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          requests: inputs.map((text) => ({
-            model: `models/${modelName}`,
-            content: { parts: [{ text }] },
-            outputDimensionality: dimensions,
-          })),
-        }),
-      },
-    );
-    const body = (await response.json()) as {
-      embeddings?: Array<{ values?: number[] }>;
-      error?: { message?: string };
-    };
-    if (!response.ok) {
-      throw new Error(
-        body.error?.message || `Gemini embedding returned ${response.status}`,
-      );
-    }
-    return (body.embeddings || []).map((item) => item.values || []);
-  }
 }

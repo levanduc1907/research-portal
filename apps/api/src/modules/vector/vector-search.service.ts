@@ -1,7 +1,7 @@
 import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { QdrantClient } from "@qdrant/js-client-rest";
-import { AiCredentialsService } from "../ai-providers/ai-credentials.service";
+import { LocalTextEmbedder, TextEmbedder } from "@repo/embeddings";
 
 export interface VectorEvidencePaper {
   id: string;
@@ -23,24 +23,27 @@ export class VectorSearchService {
   private readonly embeddingModel: string;
   private readonly embeddingDimensions: number;
   private readonly scoreThreshold: number;
+  private readonly embedder: TextEmbedder;
 
-  constructor(
-    config: ConfigService,
-    private readonly aiCredentials: AiCredentialsService,
-  ) {
-    this.collectionName = config.get("QDRANT_COLLECTION", "uiuc_papers_v1");
+  constructor(config: ConfigService) {
+    this.collectionName = config.get("QDRANT_COLLECTION", "uiuc_papers_e5_v1");
     this.embeddingModel = config.get(
-      "AI_EMBEDDING_MODEL",
-      "text-embedding-3-small",
+      "LOCAL_EMBEDDING_MODEL",
+      "Xenova/multilingual-e5-small",
     );
     this.embeddingDimensions = Number(
-      config.get("AI_EMBEDDING_DIMENSIONS", "1536"),
+      config.get("LOCAL_EMBEDDING_DIMENSIONS", "384"),
     );
     this.scoreThreshold = Number(config.get("QDRANT_SCORE_THRESHOLD", "0.2"));
     this.client = new QdrantClient({
       url: config.get("QDRANT_URL", "http://localhost:6333"),
       apiKey: config.get<string>("QDRANT_API_KEY") || undefined,
       checkCompatibility: false,
+    });
+    this.embedder = new LocalTextEmbedder({
+      model: this.embeddingModel,
+      dimensions: this.embeddingDimensions,
+      cacheDir: config.get("LOCAL_EMBEDDING_CACHE_DIR", ".cache/models"),
     });
   }
 
@@ -49,11 +52,7 @@ export class VectorSearchService {
     limit = 5,
     year?: number,
   ): Promise<VectorEvidencePaper[]> {
-    const [vector] = await this.aiCredentials.embedDefault(
-      [query],
-      this.embeddingModel,
-      this.embeddingDimensions,
-    );
+    const [vector] = await this.embedder.embed([query], "query");
     if (!vector || vector.length !== this.embeddingDimensions) {
       throw new ServiceUnavailableException(
         `Embedding provider returned ${vector?.length ?? 0} dimensions; expected ${this.embeddingDimensions}.`,

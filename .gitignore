@@ -70,3 +70,4 @@ packages/database/prisma/*.db-journal
 coverage/
 .nyc_output/
 .agents
+.cache/

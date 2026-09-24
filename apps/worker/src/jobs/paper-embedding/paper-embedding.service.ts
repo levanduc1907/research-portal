@@ -14,7 +14,6 @@ interface SyncResult {
   selected: number;
   processed: number;
   failed: number;
-  retryAfterMs?: number;
 }
 
 @Injectable()
@@ -123,10 +122,6 @@ export class PaperEmbeddingService
     if (recovered.count > 0) {
       this.logger.warn(`Recovered ${recovered.count} stale vector jobs`);
     }
-    await this.prisma.embeddingRecord.updateMany({
-      where: { status: "COMPLETED", model: { not: this.embeddings.model } },
-      data: { status: "PENDING", errorMessage: null },
-    });
   }
 
   private buildContent(paper: {
@@ -193,6 +188,10 @@ export class PaperEmbeddingService
     }
     await this.qdrant.ensureCollection();
     await this.enqueuePapersWithoutStatus(batchSize);
+    await this.prisma.embeddingRecord.updateMany({
+      where: { status: "COMPLETED", model: { not: this.embeddings.model } },
+      data: { status: "PENDING", errorMessage: null },
+    });
 
     const papers = await this.prisma.paper.findMany({
       where: {
@@ -252,7 +251,7 @@ export class PaperEmbeddingService
     );
 
     try {
-      const vectors = await this.embeddings.embed(
+      const vectors = await this.embeddings.embedDocuments(
         prepared.map((item) => item.content),
       );
       await this.qdrant.upsert(
@@ -298,17 +297,6 @@ export class PaperEmbeddingService
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const rateLimited = /quota|rate.?limit|too many requests|\b429\b/i.test(
-        message,
-      );
-      const retryMatch = message.match(/retry in\s+([\d.]+)s/i);
-      const retryAfterMs = Math.min(
-        60_000,
-        Math.max(
-          1_000,
-          Math.ceil(Number(retryMatch?.[1] || 60) * 1_000) + 1_000,
-        ),
-      );
       await this.prisma.$transaction(
         prepared.map(({ paper, contentHash }) =>
           this.prisma.embeddingRecord.updateMany({
@@ -318,24 +306,17 @@ export class PaperEmbeddingService
               status: "PROCESSING",
             },
             data: {
-              status: rateLimited ? "PENDING" : "FAILED",
+              status: "FAILED",
               errorMessage: message.slice(0, 65_535),
             },
           }),
         ),
       );
-      if (rateLimited) {
-        this.logger.warn(
-          `Embedding quota reached; returned ${prepared.length} papers to PENDING and will retry after ${retryAfterMs}ms`,
-        );
-      } else {
-        this.logger.error(`Vector sync batch failed: ${message}`);
-      }
+      this.logger.error(`Vector sync batch failed: ${message}`);
       return {
         selected: prepared.length,
         processed: 0,
-        failed: rateLimited ? 0 : prepared.length,
-        ...(rateLimited ? { retryAfterMs } : {}),
+        failed: prepared.length,
       };
     }
   }
@@ -344,13 +325,6 @@ export class PaperEmbeddingService
     const total: SyncResult = { selected: 0, processed: 0, failed: 0 };
     while (true) {
       const batch = await this.processPendingPapers(batchSize, retryFailed);
-      if (batch.retryAfterMs) {
-        this.logger.warn(
-          `Pausing vector sync for ${batch.retryAfterMs}ms to respect provider quota`,
-        );
-        await new Promise((resolve) => setTimeout(resolve, batch.retryAfterMs));
-        continue;
-      }
       total.selected += batch.selected;
       total.processed += batch.processed;
       total.failed += batch.failed;

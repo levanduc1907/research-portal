@@ -21,9 +21,4 @@ export interface AiProviderAdapter {
     onToken: (token: string) => void,
     signal?: AbortSignal,
   ): Promise<void>;
-  embedTexts(
-    config: AiProviderConfig,
-    inputs: string[],
-    dimensions: number,
-  ): Promise<number[][]>;
 }

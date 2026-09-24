@@ -211,28 +211,28 @@ The job upserts records into `researcher`, updates associated keywords in `resea
 ## Vector sync and AI question answering
 
 Start MySQL and Qdrant, then configure the worker from
-`apps/worker/.env.example`. The embedding model and dimensions must match the
-API values in `apps/api/.env`.
+`apps/worker/.env.example`. Paper and query embeddings run locally with the
+same multilingual E5 model; no embedding API key is required.
 
 ```sh
 pnpm docker:up
 
-# Add EMBEDDING_API_KEY first, then sync every pending/changed paper.
+# Download/cache the local model on first use, then sync pending papers.
 pnpm --filter worker sync:vectors
 
 # Retry records whose previous embedding batch failed.
 pnpm --filter worker sync:vectors -- --retry-failed --batch-size=50
 ```
 
-The sync creates `uiuc_papers_v1` when needed, embeds title/topic/abstract,
+The sync creates `uiuc_papers_e5_v1` when needed, embeds title/topic/abstract,
 upserts vectors and citation payloads into Qdrant, and records status plus a
 content hash in MySQL. Re-imported papers are queued again only when their
 embedding content changed.
 
 The long-running worker also starts an automatic sync immediately and polls
 every 60 seconds by default. Configure it with `VECTOR_SYNC_ENABLED`,
-`VECTOR_SYNC_INTERVAL_MS`, and `VECTOR_SYNC_BATCH_SIZE`. It waits without
-calling the embedding provider until `EMBEDDING_API_KEY` is configured.
+`VECTOR_SYNC_INTERVAL_MS`, and `VECTOR_SYNC_BATCH_SIZE`. The ONNX model is
+downloaded once into the shared local cache and reused by both API and worker.
 
 For question answering, add an active default OpenAI credential through
 `POST /v1/admin/ai-credentials` (authenticated with

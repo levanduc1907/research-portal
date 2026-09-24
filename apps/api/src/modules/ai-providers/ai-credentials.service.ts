@@ -1,8 +1,4 @@
-import {
-  Injectable,
-  NotFoundException,
-  ServiceUnavailableException,
-} from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { AiCredentialDto, AiProvider } from "@repo/contracts";
 import type { AiCredential } from "@repo/database";
@@ -174,47 +170,6 @@ export class AiCredentialsService {
       signal,
     );
     return true;
-  }
-
-  async embedDefault(
-    inputs: string[],
-    model: string,
-    dimensions: number,
-  ): Promise<number[][]> {
-    const credential = await this.prisma.aiCredential.findFirst({
-      where: { isDefault: true, isActive: true },
-      orderBy: { updatedAt: "desc" },
-    });
-    if (!credential) {
-      const geminiKey = this.config.get<string>("GEMINI_API_KEY");
-      if (!geminiKey) {
-        throw new ServiceUnavailableException(
-          "No default AI credential is configured. Add one before using semantic search.",
-        );
-      }
-      return this.adapters.get("GEMINI").embedTexts(
-        {
-          apiKey: geminiKey,
-          baseUrl: "https://generativelanguage.googleapis.com/v1beta",
-          model,
-        },
-        inputs,
-        dimensions,
-      );
-    }
-    return this.adapters.get(credential.provider as AiProvider).embedTexts(
-      {
-        apiKey: this.crypto.decrypt(
-          credential.encryptedApiKey,
-          credential.encryptionIv,
-          credential.encryptionTag,
-        ),
-        baseUrl: credential.baseUrl,
-        model,
-      },
-      inputs,
-      dimensions,
-    );
   }
 
   private async requireCredential(id: string): Promise<AiCredential> {

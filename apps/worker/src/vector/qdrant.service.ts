@@ -16,8 +16,8 @@ export class QdrantService {
 
   constructor(config: ConfigService) {
     this.collectionName =
-      config.get<string>("QDRANT_COLLECTION") || "uiuc_papers_v1";
-    this.vectorSize = Number(config.get("EMBEDDING_DIMENSIONS") || 1536);
+      config.get<string>("QDRANT_COLLECTION") || "uiuc_papers_e5_v1";
+    this.vectorSize = Number(config.get("LOCAL_EMBEDDING_DIMENSIONS") || 384);
     this.client = new QdrantClient({
       url: config.get<string>("QDRANT_URL") || "http://localhost:6333",
       apiKey: config.get<string>("QDRANT_API_KEY") || undefined,

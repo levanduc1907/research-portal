@@ -22,6 +22,7 @@
     "@nestjs/websockets": "^11.0.11",
     "@qdrant/js-client-rest": "^1.19.0",
     "@repo/contracts": "workspace:*",
+    "@repo/embeddings": "workspace:*",
     "@repo/database": "workspace:*",
     "@repo/openalex": "workspace:*",
     "bullmq": "^5.41.6",

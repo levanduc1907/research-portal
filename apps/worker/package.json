@@ -22,6 +22,7 @@
     "@nestjs/core": "^11.0.11",
     "@nestjs/schedule": "^5.0.1",
     "@qdrant/js-client-rest": "^1.19.0",
+    "@repo/embeddings": "workspace:*",
     "@repo/contracts": "workspace:*",
     "@repo/database": "workspace:*",
     "@repo/openalex": "workspace:*",
