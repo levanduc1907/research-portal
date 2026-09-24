@@ -61,4 +61,10 @@ export class GeminiAdapter implements AiProviderAdapter {
       if (token) onToken(token);
     });
   }
+
+  async embedTexts(): Promise<number[][]> {
+    throw new Error(
+      "Gemini embeddings are not enabled in the initial Qdrant happy path. Use an OpenAI or OpenAI-compatible default credential.",
+    );
+  }
 }

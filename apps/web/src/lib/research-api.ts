@@ -37,6 +37,7 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
 
 export interface StreamChunkPayload {
   token?: string;
+  error?: string;
   route?: string;
   sources?: ChatCitationDto[];
   done?: boolean;

@@ -1,374 +1,205 @@
-import { Injectable } from "@nestjs/common";
-import { PrismaService } from "../database/prisma.service";
+import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 import {
   ChatCitationDto,
   ChatRequestDto,
   ChatResponseDto,
 } from "@repo/contracts";
+import { Prisma } from "@repo/database";
 import { AiCredentialsService } from "../ai-providers/ai-credentials.service";
+import { PrismaService } from "../database/prisma.service";
+import {
+  VectorEvidencePaper,
+  VectorSearchService,
+} from "../vector/vector-search.service";
+
+type ChatRoute = "STRUCTURED" | "SEMANTIC" | "HYBRID" | "UNSUPPORTED";
+type EvidencePaper = Omit<VectorEvidencePaper, "score"> & { score?: number };
+interface StreamPayload {
+  token?: string;
+  sources?: ChatCitationDto[];
+  route?: ChatRoute;
+  done?: boolean;
+  error?: string;
+}
 
 @Injectable()
 export class ChatService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly aiCredentials: AiCredentialsService,
+    private readonly vectorSearch: VectorSearchService,
   ) {}
 
-  private classifyQuestion(query: string): {
-    route: "STRUCTURED" | "SEMANTIC" | "HYBRID" | "UNSUPPORTED";
-    keywords: string[];
-  } {
+  private classifyQuestion(query: string): ChatRoute {
     const q = query.trim().toLowerCase();
-    let route: "STRUCTURED" | "SEMANTIC" | "HYBRID" | "UNSUPPORTED" =
-      "SEMANTIC";
+    if (q.length < 4) return "UNSUPPORTED";
+    const structured = [
+      "how many",
+      "most cited",
+      "top papers",
+      "highest cited",
+      "total count",
+      "ranking",
+      "statistic",
+    ].some((term) => q.includes(term));
+    const semantic = [
+      "about",
+      "research on",
+      "work on",
+      "explain",
+      "summarize",
+      "topic",
+    ].some((term) => q.includes(term));
+    if (structured && semantic) return "HYBRID";
+    return structured ? "STRUCTURED" : "SEMANTIC";
+  }
 
-    const isCountOrAgg =
-      q.includes("how many") ||
-      q.includes("most cited") ||
-      q.includes("top papers") ||
-      q.includes("highest cited") ||
-      q.includes("total count") ||
-      q.includes("ranking") ||
-      q.includes("statistic");
-
-    const isTopicOrConcept =
-      q.includes("ai") ||
-      q.includes("hpc") ||
-      q.includes("parallel") ||
-      q.includes("quantum") ||
-      q.includes("photosynthesis") ||
-      q.includes("crop") ||
-      q.includes("robotics") ||
-      q.includes("nlp") ||
-      q.includes("memory") ||
-      q.includes("consistency") ||
-      q.includes("mining") ||
-      q.includes("agriculture");
-
-    if (isCountOrAgg && isTopicOrConcept) {
-      route = "HYBRID";
-    } else if (isCountOrAgg) {
-      route = "STRUCTURED";
-    } else if (isTopicOrConcept) {
-      route = "SEMANTIC";
-    } else if (q.length < 4) {
-      route = "UNSUPPORTED";
-    }
-
-    const keywords = q
-      .split(/\s+/)
-      .filter(
-        (w) =>
-          w.length > 3 &&
-          ![
-            "what",
-            "which",
-            "where",
-            "about",
-            "recent",
-            "research",
-            "uiuc",
-            "illinois",
-            "tell",
-            "give",
-          ].includes(w),
-      );
-
-    return { route, keywords };
+  private extractYear(query: string): number | undefined {
+    const match = query.match(/\b(19|20)\d{2}\b/);
+    return match ? Number(match[0]) : undefined;
   }
 
   private async retrieveEvidence(
-    route: string,
-    keywords: string[],
-  ): Promise<{
-    evidencePapers: {
-      id: string;
-      title: string;
-      publicationYear: number;
-      citedByCount: number;
-      doi: string | null;
-      abstract: string | null;
-    }[];
-  }> {
-    let evidencePapers: any[] = [];
-    try {
-      if (route === "STRUCTURED") {
-        evidencePapers = await this.prisma.paper.findMany({
-          orderBy: { citedByCount: "desc" },
-          take: 3,
-          select: {
-            id: true,
-            title: true,
-            publicationYear: true,
-            citedByCount: true,
-            doi: true,
-            abstract: true,
-          },
-        });
-      } else {
-        const orConditions = keywords.map((k) => ({
-          OR: [{ title: { contains: k } }, { abstract: { contains: k } }],
-        }));
-
-        evidencePapers = await this.prisma.paper.findMany({
-          where: orConditions.length > 0 ? { OR: orConditions } : undefined,
-          orderBy: { citedByCount: "desc" },
-          take: 3,
-          select: {
-            id: true,
-            title: true,
-            publicationYear: true,
-            citedByCount: true,
-            doi: true,
-            abstract: true,
-          },
-        });
-      }
-    } catch {
-      evidencePapers = [];
+    route: ChatRoute,
+    query: string,
+  ): Promise<EvidencePaper[]> {
+    if (route === "UNSUPPORTED") return [];
+    if (route === "SEMANTIC" || route === "HYBRID") {
+      return this.vectorSearch.search(query, 5, this.extractYear(query));
     }
-
-    if (evidencePapers.length === 0) {
-      evidencePapers = [
-        {
-          id: "p-1",
-          title:
-            "Optimizing Massive Scale Memory Consistency for Heterogeneous AI Accelerators",
-          publicationYear: 2025,
-          citedByCount: 48,
-          doi: "https://doi.org/10.1145/3613904.3642100",
-          abstract:
-            "Modern deep learning workloads necessitate tightly coupled hardware accelerators. In this work, UIUC researchers present an optimized memory consistency model that reduces latency by 37% across heterogeneous GPU-NPU interconnects.",
+    const records = await this.prisma.paper.findMany({
+      orderBy: { citedByCount: "desc" },
+      take: 5,
+      select: {
+        id: true,
+        title: true,
+        publicationYear: true,
+        citedByCount: true,
+        doi: true,
+        landingPageUrl: true,
+        abstract: true,
+        primaryTopic: { select: { displayName: true } },
+        authors: {
+          select: { author: { select: { displayName: true } } },
+          take: 10,
         },
-        {
-          id: "p-2",
-          title:
-            "Autonomous Knowledge Extraction from Scientific Text Using Graph Guided Foundation Models",
-          publicationYear: 2025,
-          citedByCount: 89,
-          doi: "https://doi.org/10.18653/v1/2025.findings-acl.12",
-          abstract:
-            "Extracting structured scientific facts from multidisciplinary literature is hindered by hallucination. We present a dual graph-guided prompt framework that retrieves grounding evidence and verifies factual assertions across 200,000 papers.",
-        },
-        {
-          id: "p-3",
-          title:
-            "Engineering Enhanced Photosynthetic Pathways for Elevated Atmospheric CO2 Resilience in Crops",
-          publicationYear: 2024,
-          citedByCount: 142,
-          doi: "https://doi.org/10.1126/science.ade4502",
-          abstract:
-            "Photosynthetic efficiency is a key bottleneck in crop yields under changing climatic conditions. This study demonstrates genetically modified soybean varieties that improve carbon assimilation efficiency by 22% in field trials.",
-        },
-      ];
-    }
-
-    return { evidencePapers };
+      },
+    });
+    return records.map(({ authors, primaryTopic, ...paper }) => ({
+      ...paper,
+      primaryTopic: primaryTopic?.displayName ?? null,
+      authors: authors.map(({ author }) => author.displayName),
+    }));
   }
 
-  private composeGroundedAnswer(
-    query: string,
-    route: string,
-    evidencePapers: any[],
-  ): string {
-    const q = query.toLowerCase();
-    if (route === "STRUCTURED") {
-      return `Based on recent UIUC research records from OpenAlex, the most cited works include "${evidencePapers[0]?.title}" (${evidencePapers[0]?.publicationYear}) with ${evidencePapers[0]?.citedByCount} citations, followed by "${evidencePapers[1]?.title}" (${evidencePapers[1]?.publicationYear}) with ${evidencePapers[1]?.citedByCount} citations. UIUC scholars maintain high publication density across parallel computing and data intelligence.`;
-    } else if (
-      q.includes("photo") ||
-      q.includes("crop") ||
-      q.includes("plant") ||
-      q.includes("agriculture")
-    ) {
-      const p =
-        evidencePapers.find((e) => e.title.toLowerCase().includes("photo")) ||
-        evidencePapers[0];
-      return `UIUC researchers are world leaders in photosynthetic optimization and climate-resilient crop genetics. In "${p.title}" (${p.publicationYear}), faculty developed engineered photosynthetic pathways that boosted carbon assimilation efficiency by 22% in field trials, helping safeguard future agricultural yields.`;
-    } else if (
-      q.includes("ai") ||
-      q.includes("nlp") ||
-      q.includes("extract") ||
-      q.includes("text") ||
-      q.includes("language")
-    ) {
-      const p =
-        evidencePapers.find(
-          (e) =>
-            e.title.toLowerCase().includes("knowledge") ||
-            e.title.toLowerCase().includes("text"),
-        ) || evidencePapers[0];
-      return `UIUC computer scientists actively develop graph-guided foundation models for scientific text extraction. As demonstrated in "${p.title}" (${p.publicationYear}), the approach constructs dual knowledge graphs to systematically verify factual assertions against 200,000 published research papers, significantly mitigating hallucinations.`;
-    } else if (
-      q.includes("memory") ||
-      q.includes("accelerator") ||
-      q.includes("parallel") ||
-      q.includes("hpc") ||
-      q.includes("hardware")
-    ) {
-      const p =
-        evidencePapers.find(
-          (e) =>
-            e.title.toLowerCase().includes("memory") ||
-            e.title.toLowerCase().includes("parallel"),
-        ) || evidencePapers[0];
-      return `UIUC has deep historical strengths in high-performance computing and supercomputing hardware. In "${p.title}" (${p.publicationYear}), researchers introduced a novel memory consistency model that reduces communication latency by 37% across heterogeneous GPU and NPU accelerator architectures.`;
-    } else if (
-      q.includes("robot") ||
-      q.includes("motion") ||
-      q.includes("swarm")
-    ) {
-      return `In robotics and autonomous systems, UIUC researchers focus on scalable multi-robot motion planning under dynamic kinematic constraints. Recent studies present distributed sampling algorithms capable of coordinating agent swarms in constrained 3D spaces with bounded convergence guarantees.`;
-    } else {
-      return `According to verified University of Illinois Urbana-Champaign research publications, faculty researchers are actively pushing boundaries in high-performance computing, artificial intelligence, and agricultural biotechnology. A prime reference is "${evidencePapers[0]?.title}" (${evidencePapers[0]?.publicationYear}), exploring novel acceleration and modeling techniques.`;
-    }
+  private toSources(evidence: EvidencePaper[]): ChatCitationDto[] {
+    return evidence.map((paper) => ({
+      paperId: paper.id,
+      title: paper.title,
+      year: paper.publicationYear,
+      citedByCount: paper.citedByCount,
+      doi: paper.doi,
+    }));
+  }
+
+  private buildPrompt(query: string, evidence: EvidencePaper[]): string {
+    const context = evidence.length
+      ? evidence
+          .map((paper, index) =>
+            [
+              `[${index + 1}] ${paper.title} (${paper.publicationYear})`,
+              paper.authors.length
+                ? `Authors: ${paper.authors.join(", ")}`
+                : null,
+              `Citations: ${paper.citedByCount}`,
+              paper.primaryTopic ? `Topic: ${paper.primaryTopic}` : null,
+              paper.abstract || "Abstract unavailable.",
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          )
+          .join("\n\n")
+      : "No matching research evidence was found.";
+    return [
+      "You are a research assistant for University of Illinois Urbana-Champaign publications.",
+      "Answer only from the evidence below. Do not invent facts or sources.",
+      "Cite factual claims inline as [1], [2], etc. If evidence is insufficient, say so clearly.",
+      "Keep the response concise and use the same language as the user's question.",
+      `Question:\n${query}`,
+      `Evidence:\n${context}`,
+    ].join("\n\n");
   }
 
   async processQuestion(dto: ChatRequestDto): Promise<ChatResponseDto> {
     const startTime = Date.now();
-    const { route, keywords } = this.classifyQuestion(dto.query);
-    const { evidencePapers } = await this.retrieveEvidence(route, keywords);
-
-    const sources: ChatCitationDto[] = evidencePapers.map((p) => ({
-      paperId: p.id,
-      title: p.title,
-      year: p.publicationYear,
-      citedByCount: p.citedByCount,
-      doi: p.doi,
-    }));
-
-    const answer = this.composeGroundedAnswer(dto.query, route, evidencePapers);
-    const latencyMs = Date.now() - startTime;
-
-    try {
-      await this.prisma.chatRequest.create({
-        data: {
-          query: dto.query,
-          route: route as any,
-          response: answer,
-          citations: sources as any,
-          latencyMs,
-        },
-      });
-    } catch {
-      // Non-blocking log failure
+    const route = this.classifyQuestion(dto.query);
+    const evidence = await this.retrieveEvidence(route, dto.query);
+    const sources = this.toSources(evidence);
+    let answer = "";
+    const usedProvider = await this.aiCredentials.streamDefault(
+      this.buildPrompt(dto.query, evidence),
+      (token) => {
+        answer += token;
+      },
+    );
+    if (!usedProvider) {
+      throw new ServiceUnavailableException(
+        "No default AI credential is configured. Add one in AI provider settings first.",
+      );
     }
-
+    await this.logChatRequest(dto.query, route, answer, sources, startTime);
     return {
       query: dto.query,
       route,
       answer,
       sources,
-      confidence: sources.length > 0 ? "high" : "medium",
-      latencyMs,
+      confidence: sources.length > 0 ? "high" : "low",
+      latencyMs: Date.now() - startTime,
     };
   }
 
   async streamQuestion(
     dto: ChatRequestDto,
-    onChunk: (payload: {
-      token?: string;
-      sources?: ChatCitationDto[];
-      route?: string;
-      done?: boolean;
-    }) => void,
+    onChunk: (payload: StreamPayload) => void,
     signal?: AbortSignal,
   ): Promise<void> {
     const startTime = Date.now();
-    const { route, keywords } = this.classifyQuestion(dto.query);
-    const { evidencePapers } = await this.retrieveEvidence(route, keywords);
-    if (signal?.aborted) return;
-
-    const sources: ChatCitationDto[] = evidencePapers.map((p) => ({
-      paperId: p.id,
-      title: p.title,
-      year: p.publicationYear,
-      citedByCount: p.citedByCount,
-      doi: p.doi,
-    }));
-
-    // Send metadata header first
-    onChunk({ route, sources });
-
-    const fallbackAnswer = this.composeGroundedAnswer(
-      dto.query,
-      route,
-      evidencePapers,
-    );
-
-    const evidence = evidencePapers
-      .map(
-        (paper, index) =>
-          `[${index + 1}] ${paper.title} (${paper.publicationYear})\n${paper.abstract || "No abstract available."}`,
-      )
-      .join("\n\n");
-    const prompt = [
-      "You are the University of Illinois research assistant.",
-      "Answer only from the supplied evidence. If evidence is insufficient, say so clearly.",
-      "Use concise prose and cite sources with [1], [2], etc.",
-      `Question: ${dto.query}`,
-      `Evidence:\n${evidence}`,
-    ].join("\n\n");
-
-    let providerText = "";
     try {
+      const route = this.classifyQuestion(dto.query);
+      const evidence = await this.retrieveEvidence(route, dto.query);
+      if (signal?.aborted) return;
+      const sources = this.toSources(evidence);
+      onChunk({ route, sources });
+      let answer = "";
       const usedProvider = await this.aiCredentials.streamDefault(
-        prompt,
+        this.buildPrompt(dto.query, evidence),
         (token) => {
-          providerText += token;
+          answer += token;
           onChunk({ token });
         },
         signal,
       );
-      if (usedProvider) {
-        if (!signal?.aborted) onChunk({ done: true });
-        await this.logChatRequest(
-          dto.query,
-          route,
-          providerText,
-          sources,
-          startTime,
+      if (!usedProvider) {
+        throw new ServiceUnavailableException(
+          "No default AI credential is configured. Add one in AI provider settings first.",
         );
-        return;
       }
-    } catch {
-      if (providerText) {
-        if (!signal?.aborted) onChunk({ done: true });
-        await this.logChatRequest(
-          dto.query,
-          route,
-          providerText,
-          sources,
-          startTime,
-        );
-        return;
-      }
-    }
-
-    // Break text into realistic tokens/words
-    const tokens = fallbackAnswer.match(/(\S+\s*|\s+)/g) || [fallbackAnswer];
-
-    for (const token of tokens) {
       if (signal?.aborted) return;
-      onChunk({ token });
-      // Realistic ChatGPT streaming cadence (20ms per token)
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      onChunk({ done: true });
+      await this.logChatRequest(dto.query, route, answer, sources, startTime);
+    } catch (error) {
+      if (!signal?.aborted) {
+        onChunk({
+          error: error instanceof Error ? error.message : "AI request failed.",
+          done: true,
+        });
+      }
     }
-
-    if (signal?.aborted) return;
-    onChunk({ done: true });
-
-    await this.logChatRequest(
-      dto.query,
-      route,
-      fallbackAnswer,
-      sources,
-      startTime,
-    );
   }
 
   private async logChatRequest(
     query: string,
-    route: string,
+    route: ChatRoute,
     response: string,
     sources: ChatCitationDto[],
     startTime: number,
@@ -377,14 +208,14 @@ export class ChatService {
       await this.prisma.chatRequest.create({
         data: {
           query,
-          route: route as any,
+          route,
           response,
-          citations: sources as any,
+          citations: sources as unknown as Prisma.InputJsonValue,
           latencyMs: Date.now() - startTime,
         },
       });
     } catch {
-      // ignore
+      // Logging must not break a successful response.
     }
   }
 }

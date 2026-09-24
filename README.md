@@ -198,12 +198,46 @@ pnpm --filter worker import:faculty:csv -- /absolute/path/to/faculty.csv
 
 Supports comma-separated (`,`) or tab-separated (`\t`) files. The following header columns are supported:
 
-| Column | Required | Description |
-| :--- | :--- | :--- |
-| `email` | **Yes** | Researcher email address (used as unique upsert key) |
-| `name` | **Yes** | Full name |
-| `position` | No | Faculty role / title (saved to `title`) |
-| `photo_url` | No | Profile photo URL |
-| `keywords` | No | Comma-separated research keywords |
+| Column      | Required | Description                                          |
+| :---------- | :------- | :--------------------------------------------------- |
+| `email`     | **Yes**  | Researcher email address (used as unique upsert key) |
+| `name`      | **Yes**  | Full name                                            |
+| `position`  | No       | Faculty role / title (saved to `title`)              |
+| `photo_url` | No       | Profile photo URL                                    |
+| `keywords`  | No       | Comma-separated research keywords                    |
 
 The job upserts records into `researcher`, updates associated keywords in `researcherKeyword`, and logs the status to `import_runs` with `source: "faculty_csv"`.
+
+## Vector sync and AI question answering
+
+Start MySQL and Qdrant, then configure the worker from
+`apps/worker/.env.example`. The embedding model and dimensions must match the
+API values in `apps/api/.env`.
+
+```sh
+pnpm docker:up
+
+# Add EMBEDDING_API_KEY first, then sync every pending/changed paper.
+pnpm --filter worker sync:vectors
+
+# Retry records whose previous embedding batch failed.
+pnpm --filter worker sync:vectors -- --retry-failed --batch-size=50
+```
+
+The sync creates `uiuc_papers_v1` when needed, embeds title/topic/abstract,
+upserts vectors and citation payloads into Qdrant, and records status plus a
+content hash in MySQL. Re-imported papers are queued again only when their
+embedding content changed.
+
+The long-running worker also starts an automatic sync immediately and polls
+every 60 seconds by default. Configure it with `VECTOR_SYNC_ENABLED`,
+`VECTOR_SYNC_INTERVAL_MS`, and `VECTOR_SYNC_BATCH_SIZE`. It waits without
+calling the embedding provider until `EMBEDDING_API_KEY` is configured.
+
+For question answering, add an active default OpenAI credential through
+`POST /v1/admin/ai-credentials` (authenticated with
+`AI_CREDENTIALS_ADMIN_TOKEN`). The API embeds semantic questions, retrieves
+the closest papers from Qdrant, sends only that evidence to the configured
+model, and streams the grounded answer from `POST /v1/chat/stream`. Until a
+key is configured, the endpoint returns a clear configuration error and never
+falls back to a fabricated answer.

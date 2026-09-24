@@ -9,6 +9,7 @@ import {
   NormalizedWork,
 } from "@repo/openalex";
 import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { PrismaService } from "../../database/prisma.service";
 
@@ -254,6 +255,40 @@ export class OpenAlexImportService {
       where: { openalexId: normalized.paper.openalexId },
       update: { ...normalized.paper, primaryTopicId },
       create: { ...normalized.paper, primaryTopicId },
+    });
+    const embeddingContent = [
+      `Title: ${normalized.paper.title}`,
+      primaryTopic?.displayName
+        ? `Primary topic: ${primaryTopic.displayName}`
+        : "",
+      normalized.paper.abstract ? `Abstract: ${normalized.paper.abstract}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n")
+      .slice(0, 24_000);
+    const contentHash = createHash("sha256")
+      .update(embeddingContent)
+      .digest("hex");
+    await this.prisma.embeddingRecord.updateMany({
+      where: {
+        paperId: paper.id,
+        contentHash: { not: contentHash },
+      },
+      data: { status: "PENDING", errorMessage: null },
+    });
+    await this.prisma.embeddingRecord.createMany({
+      data: [
+        {
+          paperId: paper.id,
+          embeddingVersion: "v1",
+          model:
+            this.config.get<string>("EMBEDDING_MODEL") ||
+            "text-embedding-3-small",
+          contentHash,
+          status: "PENDING",
+        },
+      ],
+      skipDuplicates: true,
     });
 
     for (const topic of normalized.topics) {

@@ -4,6 +4,8 @@ import { ScheduleModule } from "@nestjs/schedule";
 import { DatabaseModule } from "./database/database.module";
 import { OpenAlexImportService } from "./jobs/openalex-import/openalex-import.service";
 import { PaperEmbeddingService } from "./jobs/paper-embedding/paper-embedding.service";
+import { EmbeddingProviderService } from "./vector/embedding-provider.service";
+import { QdrantService } from "./vector/qdrant.service";
 
 @Module({
   imports: [
@@ -16,10 +18,9 @@ import { PaperEmbeddingService } from "./jobs/paper-embedding/paper-embedding.se
   providers: [
     OpenAlexImportService,
     PaperEmbeddingService,
+    EmbeddingProviderService,
+    QdrantService,
   ],
-  exports: [
-    OpenAlexImportService,
-    PaperEmbeddingService,
-  ],
+  exports: [OpenAlexImportService, PaperEmbeddingService],
 })
 export class AppModule {}

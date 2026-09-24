@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { AppModule } from "./app.module";
 import { OpenAlexImportService } from "./jobs/openalex-import/openalex-import.service";
+import { PaperEmbeddingService } from "./jobs/paper-embedding/paper-embedding.service";
 
 async function bootstrap() {
   const logger = new Logger("WorkerBootstrap");
@@ -15,7 +16,8 @@ async function bootstrap() {
     command === "import-faculty" ||
     command === "import-faculty-csv" ||
     command === "import-phase2" ||
-    command === "link-researcher-authors"
+    command === "link-researcher-authors" ||
+    command === "sync-vectors"
   ) {
     const importer = app.get(OpenAlexImportService);
     let failed = false;
@@ -48,6 +50,19 @@ async function bootstrap() {
     if (command === "link-researcher-authors") {
       const result = await importer.linkExistingResearchersToAuthors();
       failed ||= result.status === "FAILED";
+    }
+    if (command === "sync-vectors") {
+      const batchSizeArg = process.argv.find((arg) =>
+        arg.startsWith("--batch-size="),
+      );
+      const batchSize = Number(batchSizeArg?.split("=")[1] || 50);
+      const retryFailed = process.argv.includes("--retry-failed");
+      const embeddings = app.get(PaperEmbeddingService);
+      const result = await embeddings.syncAll(batchSize, retryFailed);
+      logger.log(
+        `Vector sync finished: ${result.processed} completed, ${result.failed} failed`,
+      );
+      failed ||= result.failed > 0;
     }
 
     await app.close();

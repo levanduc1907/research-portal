@@ -94,6 +94,7 @@ export function AiAssistant(): React.JSX.Element {
         query,
         controller.signal,
       )) {
+        if (chunk.error) throw new Error(chunk.error);
         if (chunk.token) receivedText = true;
         setMessages((current) =>
           current.map((message) =>
