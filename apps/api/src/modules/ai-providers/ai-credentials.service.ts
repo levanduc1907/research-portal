@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { AiCredentialDto, AiProvider } from "@repo/contracts";
 import type { AiCredential } from "@repo/database";
 import { PrismaService } from "../database/prisma.service";
@@ -19,6 +20,7 @@ export class AiCredentialsService {
     private readonly prisma: PrismaService,
     private readonly crypto: CredentialCryptoService,
     private readonly adapters: AiAdapterRegistry,
+    private readonly config: ConfigService,
   ) {}
 
   private toDto(item: AiCredential): AiCredentialDto {
@@ -142,7 +144,21 @@ export class AiCredentialsService {
       where: { isDefault: true, isActive: true },
       orderBy: { updatedAt: "desc" },
     });
-    if (!credential) return false;
+    if (!credential) {
+      const geminiKey = this.config.get<string>("GEMINI_API_KEY");
+      if (!geminiKey) return false;
+      await this.adapters.get("GEMINI").streamText(
+        {
+          apiKey: geminiKey,
+          baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+          model: this.config.get("GEMINI_CHAT_MODEL", "gemini-flash-latest"),
+        },
+        prompt,
+        onToken,
+        signal,
+      );
+      return true;
+    }
     await this.adapters.get(credential.provider as AiProvider).streamText(
       {
         apiKey: this.crypto.decrypt(
@@ -170,8 +186,20 @@ export class AiCredentialsService {
       orderBy: { updatedAt: "desc" },
     });
     if (!credential) {
-      throw new ServiceUnavailableException(
-        "No default AI credential is configured. Add one before using semantic search.",
+      const geminiKey = this.config.get<string>("GEMINI_API_KEY");
+      if (!geminiKey) {
+        throw new ServiceUnavailableException(
+          "No default AI credential is configured. Add one before using semantic search.",
+        );
+      }
+      return this.adapters.get("GEMINI").embedTexts(
+        {
+          apiKey: geminiKey,
+          baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+          model,
+        },
+        inputs,
+        dimensions,
       );
     }
     return this.adapters.get(credential.provider as AiProvider).embedTexts(

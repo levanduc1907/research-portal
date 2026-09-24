@@ -57,8 +57,11 @@ async function bootstrap() {
       );
       const batchSize = Number(batchSizeArg?.split("=")[1] || 50);
       const retryFailed = process.argv.includes("--retry-failed");
+      const once = process.argv.includes("--once");
       const embeddings = app.get(PaperEmbeddingService);
-      const result = await embeddings.syncAll(batchSize, retryFailed);
+      const result = once
+        ? await embeddings.processPendingPapers(batchSize, retryFailed)
+        : await embeddings.syncAll(batchSize, retryFailed);
       logger.log(
         `Vector sync finished: ${result.processed} completed, ${result.failed} failed`,
       );
