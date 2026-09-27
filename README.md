@@ -158,8 +158,8 @@ Configure the ingestion behavior with the following environment variables:
 # Target count of papers to ingest
 IMPORT_PAPER_TARGET=20000
 
-# Batch size per OpenAlex page (maximum allowed by OpenAlex is 200)
-IMPORT_BATCH_SIZE=200
+# Batch size per OpenAlex page (supported maximum is 100)
+IMPORT_BATCH_SIZE=100
 
 # Publication date filters: specify exact dates (YYYY-MM-DD) or fallback to year range
 # If IMPORT_FROM_DATE / IMPORT_TO_DATE are set, they take precedence over the year variables.
@@ -207,6 +207,30 @@ Supports comma-separated (`,`) or tab-separated (`\t`) files. The following head
 | `keywords`  | No       | Comma-separated research keywords                    |
 
 The job upserts records into `researcher`, updates associated keywords in `researcherKeyword`, and logs the status to `import_runs` with `source: "faculty_csv"`.
+
+### 4. Backfill every saved researcher's papers
+
+Run the researcher-first backfill after importing faculty. It resolves missing
+OpenAlex author links using name, UIUC affiliation, email-derived name signals,
+and UIUC-affiliated work bylines, then imports every work for the resolved
+author with cursor pagination.
+
+```sh
+# Resume the latest interrupted run, or start a new run when none exists.
+pnpm --filter worker backfill:researcher-papers
+
+# Discard an old checkpoint and scan every researcher again.
+pnpm --filter worker backfill:researcher-papers -- --restart
+
+# Backfill one researcher by the researcher table UUID.
+pnpm --filter worker backfill:researcher-papers -- --researcher-id=<uuid>
+```
+
+The job is idempotent, checkpoints both the active researcher and OpenAlex
+works cursor in `import_runs`, skips author matches that remain ambiguous, and
+marks new or changed papers as `PENDING` for vector synchronization. Tune it
+with `RESEARCHER_PAPER_IMPORT_BATCH_SIZE` (maximum 100) and
+`RESEARCHER_PAPER_PERSIST_CONCURRENCY`.
 
 ## Vector sync and AI question answering
 

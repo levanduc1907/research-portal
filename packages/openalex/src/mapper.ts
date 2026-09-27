@@ -8,6 +8,8 @@ export interface OpenAlexAuthorRaw {
   };
   author_position?: string;
   is_corresponding?: boolean;
+  raw_author_name?: string;
+  institutions?: Array<{ id?: string }>;
 }
 
 export interface OpenAlexTopicRaw {
@@ -79,7 +81,8 @@ export function mapOpenAlexWork(raw: OpenAlexWorkRaw): NormalizedWork {
   const citedByCount = raw.cited_by_count || 0;
   const abstract = reconstructAbstract(raw.abstract_inverted_index);
 
-  const landingPageUrl = raw.primary_location?.landing_page_url || raw.doi || null;
+  const landingPageUrl =
+    raw.primary_location?.landing_page_url || raw.doi || null;
   const pdfUrl = raw.primary_location?.pdf_url || null;
 
   const authors = (raw.authorships || [])

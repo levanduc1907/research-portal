@@ -42,13 +42,17 @@ export class OpenAlexClient {
 
   private async request<T>(url: string, label: string): Promise<T> {
     let lastError: Error | undefined;
+    const requestUrl = new URL(url);
+    if (this.apiKey && !requestUrl.searchParams.has("api_key")) {
+      requestUrl.searchParams.set("api_key", this.apiKey);
+    }
 
     for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
       try {
-        const response = await fetch(url, {
+        const response = await fetch(requestUrl, {
           headers: this.buildHeaders(),
           signal: controller.signal,
         });
@@ -69,7 +73,9 @@ export class OpenAlexClient {
         const retryAfter = Number(response.headers.get("retry-after"));
         if (response.status === 429 && retryAfter > 60) {
           throw new Error(
-            `${label} rate limit budget is exhausted; retry after ${retryAfter}s or configure OPENALEX_API_KEY`,
+            this.apiKey
+              ? `${label} daily budget is exhausted for the configured OPENALEX_API_KEY; retry after ${retryAfter}s`
+              : `${label} anonymous rate limit budget is exhausted; retry after ${retryAfter}s or configure OPENALEX_API_KEY`,
           );
         }
         const delayMs =
@@ -104,7 +110,6 @@ export class OpenAlexClient {
       Accept: "application/json",
       "User-Agent": `UIUCResearchPortal/1.0 (mailto:${this.email})`,
     };
-    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
     return headers;
   }
 
@@ -116,7 +121,8 @@ export class OpenAlexClient {
 
   async getWorks(
     params: {
-      institutionId?: string;
+      institutionId?: string | null;
+      authorId?: string;
       cursor?: string;
       perPage?: number;
       fromYear?: number;
@@ -124,16 +130,23 @@ export class OpenAlexClient {
       fromDate?: string;
       toDate?: string;
       search?: string;
+      rawAuthorName?: string;
     } = {},
   ): Promise<OpenAlexWorksResponse> {
-    const instId = (params.institutionId || "I157725225").replace(
-      "https://openalex.org/",
-      "",
-    );
-    const perPage = Math.min(params.perPage || 200, 200);
+    const perPage = Math.min(params.perPage || 100, 100);
     const cursor = params.cursor || "*";
 
-    const filterParts: string[] = [`institutions.id:${instId}`];
+    const filterParts: string[] = [];
+    if (params.authorId) {
+      const authorId = params.authorId.replace("https://openalex.org/", "");
+      filterParts.push(`authorships.author.id:${authorId}`);
+    } else if (params.institutionId !== null) {
+      const institutionId = (params.institutionId || "I157725225").replace(
+        "https://openalex.org/",
+        "",
+      );
+      filterParts.push(`authorships.institutions.id:${institutionId}`);
+    }
     if (params.fromDate) {
       filterParts.push(`from_publication_date:${params.fromDate}`);
     } else if (params.fromYear) {
@@ -145,10 +158,15 @@ export class OpenAlexClient {
     } else if (params.toYear) {
       filterParts.push(`to_publication_date:${params.toYear}-12-31`);
     }
+    if (params.rawAuthorName) {
+      filterParts.push(`raw_author_name.search:${params.rawAuthorName}`);
+    }
 
     const url = new URL(`${this.baseUrl}/works`);
-    url.searchParams.set("filter", filterParts.join(","));
-    url.searchParams.set("per-page", perPage.toString());
+    if (filterParts.length) {
+      url.searchParams.set("filter", filterParts.join(","));
+    }
+    url.searchParams.set("per_page", perPage.toString());
     url.searchParams.set("cursor", cursor);
     url.searchParams.set("mailto", this.email || "");
 
@@ -164,21 +182,26 @@ export class OpenAlexClient {
 
   async getAuthors(
     params: {
-      institutionId?: string;
+      institutionId?: string | null;
       cursor?: string;
       perPage?: number;
       search?: string;
     } = {},
   ): Promise<OpenAlexAuthorsResponse> {
-    const instId = (params.institutionId || "I157725225").replace(
-      "https://openalex.org/",
-      "",
-    );
     const url = new URL(`${this.baseUrl}/authors`);
-    url.searchParams.set("filter", `affiliations.institution.id:${instId}`);
+    if (params.institutionId !== null) {
+      const institutionId = (params.institutionId || "I157725225").replace(
+        "https://openalex.org/",
+        "",
+      );
+      url.searchParams.set(
+        "filter",
+        `affiliations.institution.id:${institutionId}`,
+      );
+    }
     url.searchParams.set(
-      "per-page",
-      String(Math.min(params.perPage || 200, 200)),
+      "per_page",
+      String(Math.min(params.perPage || 100, 100)),
     );
     url.searchParams.set("cursor", params.cursor || "*");
     url.searchParams.set("sort", "works_count:desc");

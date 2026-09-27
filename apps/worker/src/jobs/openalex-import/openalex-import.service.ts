@@ -3,10 +3,12 @@ import { ConfigService } from "@nestjs/config";
 import {
   OpenAlexAuthorEntityRaw,
   OpenAlexClient,
+  OpenAlexWorkRaw,
   mapOpenAlexAuthor,
   mapOpenAlexAuthorIdentity,
   mapOpenAlexWork,
   NormalizedWork,
+  inferResearcherDepartment,
 } from "@repo/openalex";
 import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
@@ -17,6 +19,12 @@ type ImportResult = {
   totalFetched: number;
   totalImported: number;
   status: "COMPLETED" | "FAILED";
+};
+
+type ResearcherWorkCheckpoint = {
+  lastCompletedResearcherId: string | null;
+  activeResearcherId: string | null;
+  worksCursor: string;
 };
 
 @Injectable()
@@ -92,6 +100,15 @@ export class OpenAlexImportService {
           orderBy: { updatedAt: "desc" },
         })
       : null;
+    await this.prisma.importRun.updateMany({
+      where: { source, status: "RUNNING" },
+      data: {
+        status: "FAILED",
+        completedAt: new Date(),
+        errorMessage:
+          "Superseded by a new import process; resume from its checkpoint.",
+      },
+    });
     return this.prisma.importRun.create({
       data: {
         source,
@@ -106,6 +123,8 @@ export class OpenAlexImportService {
 
   private readonly topicCache = new Map<string, string>();
   private readonly authorCache = new Map<string, string>();
+  private readonly topicUpserts = new Map<string, Promise<string | null>>();
+  private readonly authorUpserts = new Map<string, Promise<string | null>>();
 
   private normalizePersonName(value: string): string {
     return value
@@ -117,9 +136,77 @@ export class OpenAlexImportService {
       .toLowerCase();
   }
 
+  private buildNameSearchVariants(value: string): string[] {
+    const original = value.replace(/\s+/g, " ").trim();
+    const words = original.split(" ").filter(Boolean);
+    const variants: string[] = [original];
+    const add = (candidate: string) => {
+      const normalized = candidate.replace(/\s+/g, " ").trim();
+      if (
+        normalized &&
+        !variants.some(
+          (item) => item.toLocaleLowerCase() === normalized.toLocaleLowerCase(),
+        )
+      ) {
+        variants.push(normalized);
+      }
+    };
+
+    if (words.length > 2) {
+      // OpenAlex search is often literal enough that a full middle name does
+      // not find an indexed initial (Amy Jaye -> Amy J.) or an omitted middle
+      // name (Theresa Ann -> Theresa). Try both representations explicitly.
+      for (let index = 1; index < words.length - 1; index++) {
+        const initial = words[index].replace(/[^\p{L}\p{N}]/gu, "")[0];
+        if (initial) {
+          const abbreviated = [...words];
+          abbreviated[index] = `${initial}.`;
+          add(abbreviated.join(" "));
+        }
+
+        add(words.filter((_, wordIndex) => wordIndex !== index).join(" "));
+      }
+      add(`${words[0]} ${words.at(-1)}`);
+    }
+
+    add(this.normalizePersonName(original));
+    return variants.slice(0, 12);
+  }
+
+  private compatibleNameToken(left: string, right: string): boolean {
+    return (
+      left === right ||
+      (left[0] === right[0] && (left.length === 1 || right.length === 1))
+    );
+  }
+
+  private middleNameMatchCount(left: string[], right: string[]): number {
+    const rows = left.length + 1;
+    const columns = right.length + 1;
+    const scores = Array.from({ length: rows }, () =>
+      Array<number>(columns).fill(0),
+    );
+    for (let row = 1; row < rows; row++) {
+      for (let column = 1; column < columns; column++) {
+        scores[row][column] = this.compatibleNameToken(
+          left[row - 1],
+          right[column - 1],
+        )
+          ? scores[row - 1][column - 1] + 1
+          : Math.max(scores[row - 1][column], scores[row][column - 1]);
+      }
+    }
+    return scores[left.length][right.length];
+  }
+
   private personNameScore(expected: string, candidate: string): number {
-    const expectedTokens = this.normalizePersonName(expected).split(" ");
-    const candidateTokens = this.normalizePersonName(candidate).split(" ");
+    const expectedTokens = this.normalizePersonName(expected)
+      .split(" ")
+      .filter(Boolean);
+    const candidateTokens = this.normalizePersonName(candidate)
+      .split(" ")
+      .filter(Boolean);
+    if (!expectedTokens.length || !candidateTokens.length) return 0;
     if (expectedTokens.join(" ") === candidateTokens.join(" ")) return 100;
     if (
       expectedTokens.length === candidateTokens.length &&
@@ -133,14 +220,322 @@ export class OpenAlexImportService {
     const expectedLast = expectedTokens.at(-1) || "";
     const candidateLast = candidateTokens.at(-1) || "";
     if (expectedLast !== candidateLast) return 0;
-    if (expectedFirst === candidateFirst) {
-      const overlap = expectedTokens.filter((token) =>
-        candidateTokens.includes(token),
-      ).length;
-      return 85 + Math.min(10, overlap * 2);
+    const firstNameExact = expectedFirst === candidateFirst;
+    const firstNameCompatible = this.compatibleNameToken(
+      expectedFirst,
+      candidateFirst,
+    );
+    if (!firstNameCompatible) return 0;
+
+    const expectedMiddle = expectedTokens.slice(1, -1);
+    const candidateMiddle = candidateTokens.slice(1, -1);
+    const middleMatches = this.middleNameMatchCount(
+      expectedMiddle,
+      candidateMiddle,
+    );
+    if (
+      expectedMiddle.length > 0 &&
+      candidateMiddle.length > 0 &&
+      middleMatches === 0
+    ) {
+      return 0;
     }
-    if (expectedFirst[0] && expectedFirst[0] === candidateFirst[0]) return 75;
-    return 0;
+
+    const base = firstNameExact ? 88 : 80;
+    return Math.min(97, base + Math.min(9, middleMatches * 4));
+  }
+
+  private authorNameScore(
+    expectedName: string,
+    candidate: OpenAlexAuthorEntityRaw,
+  ): number {
+    if (
+      candidate.display_name &&
+      this.hasExplicitMiddleNameConflict(expectedName, candidate.display_name)
+    ) {
+      return 0;
+    }
+    return Math.max(
+      0,
+      ...[
+        candidate.display_name,
+        ...(candidate.display_name_alternatives || []),
+      ]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => this.personNameScore(expectedName, value)),
+    );
+  }
+
+  private hasExplicitMiddleNameConflict(
+    expectedName: string,
+    candidateName: string,
+  ): boolean {
+    const expected = this.normalizePersonName(expectedName)
+      .split(" ")
+      .filter(Boolean);
+    const candidate = this.normalizePersonName(candidateName)
+      .split(" ")
+      .filter(Boolean);
+    if (expected.length < 3 || candidate.length < 3) return false;
+    if (expected[0] !== candidate[0] || expected.at(-1) !== candidate.at(-1)) {
+      return false;
+    }
+    return (
+      this.middleNameMatchCount(
+        expected.slice(1, -1),
+        candidate.slice(1, -1),
+      ) === 0
+    );
+  }
+
+  private pickLocalAuthor(
+    researcher: { name: string; email: string | null },
+    candidates: Array<{
+      id: string;
+      openalexId: string;
+      displayName: string;
+    }>,
+    unavailableAuthorIds: Set<string>,
+  ) {
+    const ranked = candidates
+      .filter((candidate) => !unavailableAuthorIds.has(candidate.id))
+      .map((candidate) => {
+        const nameScore = this.personNameScore(
+          researcher.name,
+          candidate.displayName,
+        );
+        const emailScore = this.emailIdentityScore(
+          researcher.email,
+          candidate.displayName,
+        );
+        return { candidate, nameScore, score: nameScore + emailScore };
+      })
+      .filter(
+        ({ nameScore, score }) =>
+          nameScore >= 92 || (nameScore >= 88 && score >= 100),
+      )
+      .sort((left, right) => right.score - left.score);
+    if (!ranked.length) return null;
+    if (ranked.length > 1 && ranked[0].score === ranked[1].score) return null;
+    return ranked[0].candidate;
+  }
+
+  private emailIdentityScore(
+    email: string | null,
+    candidateName: string,
+  ): number {
+    if (!email) return 0;
+    const localPart = email.split("@")[0] || "";
+    const normalizedLocal = this.normalizePersonName(localPart);
+    const normalizedCandidate = this.normalizePersonName(candidateName);
+    if (!normalizedLocal || !normalizedCandidate) return 0;
+
+    const compactLocal = normalizedLocal.replace(/\s+/g, "");
+    const candidateTokens = normalizedCandidate.split(" ").filter(Boolean);
+    const compactCandidate = candidateTokens.join("");
+    if (compactLocal === compactCandidate) return 20;
+
+    const first = candidateTokens[0] || "";
+    const last = candidateTokens.at(-1) || "";
+    if (
+      last.length >= 3 &&
+      compactLocal.includes(last) &&
+      first[0] &&
+      compactLocal.includes(first[0])
+    ) {
+      return 15;
+    }
+
+    const matchedTokens = candidateTokens.filter(
+      (token) => token.length >= 3 && compactLocal.includes(token),
+    ).length;
+    return Math.min(12, matchedTokens * 6);
+  }
+
+  private pickOpenAlexAuthor(
+    expectedName: string,
+    email: string | null,
+    candidates: OpenAlexAuthorEntityRaw[],
+    requireEmailSignal = false,
+  ): OpenAlexAuthorEntityRaw | null {
+    const ranked = candidates
+      .map((candidate) => {
+        const candidateNames = [
+          candidate.display_name,
+          ...(candidate.display_name_alternatives || []),
+        ].filter((value): value is string => Boolean(value));
+        const nameScore = this.authorNameScore(expectedName, candidate);
+        const emailScore = Math.max(
+          0,
+          ...candidateNames.map((value) =>
+            this.emailIdentityScore(email, value),
+          ),
+        );
+        return {
+          candidate,
+          nameScore,
+          emailScore,
+          score: nameScore + emailScore,
+        };
+      })
+      .filter(
+        ({ nameScore, emailScore, score }) =>
+          nameScore >= 75 &&
+          score >= 85 &&
+          (!requireEmailSignal || emailScore >= 12),
+      )
+      .sort(
+        (left, right) =>
+          right.score - left.score ||
+          (right.candidate.works_count || 0) -
+            (left.candidate.works_count || 0),
+      );
+
+    if (!ranked.length) return null;
+    if (ranked.length > 1 && ranked[0].score === ranked[1].score) return null;
+    return ranked[0].candidate;
+  }
+
+  private async searchOpenAlexAuthor(
+    name: string,
+    email: string | null,
+    institutionId: string,
+  ): Promise<OpenAlexAuthorEntityRaw | null> {
+    const nameVariants = this.buildNameSearchVariants(name);
+    for (const search of nameVariants) {
+      const institutionMatches = await this.client.getAuthors({
+        institutionId,
+        search,
+        perPage: 25,
+      });
+      const institutionCandidate = this.pickOpenAlexAuthor(
+        name,
+        email,
+        institutionMatches.results,
+      );
+      if (institutionCandidate) {
+        if (search !== name) {
+          this.logger.log(
+            `Resolved ${name} with OpenAlex name variant "${search}" (${institutionCandidate.display_name || institutionCandidate.id})`,
+          );
+        }
+        return institutionCandidate;
+      }
+    }
+
+    const emailLocalPart = email
+      ?.split("@")[0]
+      ?.replace(/[._-]+/g, " ")
+      .trim();
+    if (emailLocalPart) {
+      const emailMatches = await this.client.getAuthors({
+        institutionId,
+        search: emailLocalPart,
+        perPage: 25,
+      });
+      const emailCandidate = this.pickOpenAlexAuthor(
+        name,
+        email,
+        emailMatches.results,
+      );
+      if (emailCandidate) return emailCandidate;
+    }
+
+    const fromAffiliatedWorks = await this.searchAuthorFromAffiliatedWorks(
+      name,
+      email,
+      institutionId,
+      nameVariants,
+    );
+    if (fromAffiliatedWorks) return fromAffiliatedWorks;
+
+    // Some former UIUC researchers no longer have UIUC in their current
+    // affiliation search index. A global fallback is accepted only when the
+    // email local-part independently agrees with the candidate name.
+    if (email) {
+      for (const search of nameVariants) {
+        const globalMatches = await this.client.getAuthors({
+          institutionId: null,
+          search,
+          perPage: 25,
+        });
+        const candidate = this.pickOpenAlexAuthor(
+          name,
+          email,
+          globalMatches.results,
+          true,
+        );
+        if (candidate) return candidate;
+      }
+    }
+
+    return null;
+  }
+
+  private async searchAuthorFromAffiliatedWorks(
+    name: string,
+    email: string | null,
+    institutionId: string,
+    nameVariants: string[] = this.buildNameSearchVariants(name),
+  ): Promise<OpenAlexAuthorEntityRaw | null> {
+    const cleanInstitutionId = institutionId.replace(
+      "https://openalex.org/",
+      "",
+    );
+    const candidates = new Map<
+      string,
+      { id: string; displayName: string; score: number; workIds: Set<string> }
+    >();
+
+    for (const rawAuthorName of nameVariants) {
+      const response = await this.client.getWorks({
+        institutionId,
+        rawAuthorName,
+        perPage: 100,
+      });
+      for (const work of response.results) {
+        for (const authorship of work.authorships || []) {
+          const isUiucAuthorship = (authorship.institutions || []).some(
+            ({ id }) =>
+              id?.replace("https://openalex.org/", "") === cleanInstitutionId,
+          );
+          if (!isUiucAuthorship || !authorship.author?.id) continue;
+          const candidateName =
+            authorship.raw_author_name || authorship.author.display_name;
+          const nameScore = this.personNameScore(name, candidateName);
+          const score =
+            nameScore + this.emailIdentityScore(email, candidateName);
+          if (nameScore < 80 || score < 85) continue;
+
+          const current = candidates.get(authorship.author.id);
+          const workIds = current?.workIds || new Set<string>();
+          workIds.add(work.id);
+          candidates.set(authorship.author.id, {
+            id: authorship.author.id,
+            displayName: authorship.author.display_name || candidateName,
+            score: Math.max(score, current?.score || 0),
+            workIds,
+          });
+        }
+      }
+    }
+
+    const ranked = [...candidates.values()].sort(
+      (left, right) =>
+        right.workIds.size - left.workIds.size || right.score - left.score,
+    );
+    if (!ranked.length) return null;
+    if (
+      ranked.length > 1 &&
+      ranked[0].workIds.size === ranked[1].workIds.size &&
+      ranked[0].score === ranked[1].score
+    ) {
+      return null;
+    }
+    this.logger.log(
+      `Resolved ${name} through ${ranked[0].workIds.size} UIUC-affiliated work bylines (${ranked[0].displayName})`,
+    );
+    return this.client.getAuthor(ranked[0].id);
   }
 
   private async upsertOpenAlexAuthor(
@@ -160,45 +555,22 @@ export class OpenAlexImportService {
     name: string,
     openalexId?: string,
     institutionId: string = "I157725225",
+    email: string | null = null,
   ): Promise<OpenAlexAuthorEntityRaw> {
     if (openalexId) {
       return this.client.getAuthor(openalexId);
     }
-
-    const response = await this.client.getAuthors({
+    const candidate = await this.searchOpenAlexAuthor(
+      name,
+      email,
       institutionId,
-      search: name,
-      perPage: 25,
-    });
-    const ranked = response.results
-      .map((candidate) => ({
-        candidate,
-        score: Math.max(
-          ...[
-            candidate.display_name,
-            ...(candidate.display_name_alternatives || []),
-          ]
-            .filter((value): value is string => Boolean(value))
-            .map((value) => this.personNameScore(name, value)),
-        ),
-      }))
-      .filter((item) => item.score >= 85)
-      .sort(
-        (left, right) =>
-          right.score - left.score ||
-          (right.candidate.works_count || 0) -
-            (left.candidate.works_count || 0),
-      );
-
-    if (
-      !ranked.length ||
-      ranked.filter((item) => item.score === ranked[0].score).length !== 1
-    ) {
+    );
+    if (!candidate) {
       throw new Error(
         `Cannot uniquely resolve an OpenAlex UIUC author for "${name}" with a safe name score`,
       );
     }
-    return ranked[0].candidate;
+    return candidate;
   }
 
   private async upsertTopic(
@@ -207,39 +579,36 @@ export class OpenAlexImportService {
     if (!topic || !topic.openalexId) return null;
     const cached = this.topicCache.get(topic.openalexId);
     if (cached) return cached;
+    const pending = this.topicUpserts.get(topic.openalexId);
+    if (pending) return pending;
 
-    const existing = await this.prisma.topic.findUnique({
-      where: { openalexId: topic.openalexId },
-    });
-    if (existing) {
-      this.topicCache.set(topic.openalexId, existing.id);
-      return existing.id;
-    }
-
-    try {
-      const record = await this.prisma.topic.create({
-        data: {
-          openalexId: topic.openalexId,
-          displayName: topic.displayName,
-          subfieldId: topic.subfieldId,
-          subfieldName: topic.subfieldName,
-          fieldId: topic.fieldId,
-          fieldName: topic.fieldName,
-          domainId: topic.domainId,
-          domainName: topic.domainName,
-        },
-      });
-      this.topicCache.set(topic.openalexId, record.id);
-      return record.id;
-    } catch {
-      const found = await this.prisma.topic.findUnique({
+    const topicData = {
+      displayName: topic.displayName,
+      subfieldId: topic.subfieldId,
+      subfieldName: topic.subfieldName,
+      fieldId: topic.fieldId,
+      fieldName: topic.fieldName,
+      domainId: topic.domainId,
+      domainName: topic.domainName,
+    };
+    const operation = this.prisma.topic
+      .upsert({
         where: { openalexId: topic.openalexId },
+        update: topicData,
+        create: {
+          openalexId: topic.openalexId,
+          ...topicData,
+        },
+      })
+      .then((record) => {
+        this.topicCache.set(topic.openalexId, record.id);
+        return record.id;
       });
-      if (found) {
-        this.topicCache.set(topic.openalexId, found.id);
-        return found.id;
-      }
-      return null;
+    this.topicUpserts.set(topic.openalexId, operation);
+    try {
+      return await operation;
+    } finally {
+      this.topicUpserts.delete(topic.openalexId);
     }
   }
 
@@ -249,38 +618,38 @@ export class OpenAlexImportService {
     if (!item || !item.openalexId) return null;
     const cached = this.authorCache.get(item.openalexId);
     if (cached) return cached;
+    const pending = this.authorUpserts.get(item.openalexId);
+    if (pending) return pending;
 
-    const existing = await this.prisma.author.findUnique({
-      where: { openalexId: item.openalexId },
-    });
-    if (existing) {
-      this.authorCache.set(item.openalexId, existing.id);
-      return existing.id;
-    }
-
-    try {
-      const author = await this.prisma.author.create({
-        data: {
+    const operation = this.prisma.author
+      .upsert({
+        where: { openalexId: item.openalexId },
+        update: {
+          displayName: item.displayName,
+          ...(item.orcid ? { orcid: item.orcid } : {}),
+        },
+        create: {
           openalexId: item.openalexId,
           displayName: item.displayName,
           orcid: item.orcid,
         },
+      })
+      .then((author) => {
+        this.authorCache.set(item.openalexId, author.id);
+        return author.id;
       });
-      this.authorCache.set(item.openalexId, author.id);
-      return author.id;
-    } catch {
-      const found = await this.prisma.author.findUnique({
-        where: { openalexId: item.openalexId },
-      });
-      if (found) {
-        this.authorCache.set(item.openalexId, found.id);
-        return found.id;
-      }
-      return null;
+    this.authorUpserts.set(item.openalexId, operation);
+    try {
+      return await operation;
+    } finally {
+      this.authorUpserts.delete(item.openalexId);
     }
   }
 
-  private async persistWork(normalized: NormalizedWork): Promise<void> {
+  private async persistWork(
+    normalized: NormalizedWork,
+    canonicalAuthorId?: string,
+  ): Promise<void> {
     const topicIds = new Map<string, string>();
     for (const topic of normalized.topics) {
       if (!topic?.openalexId) continue;
@@ -325,8 +694,8 @@ export class OpenAlexImportService {
           paperId: paper.id,
           embeddingVersion: "v1",
           model:
-            this.config.get<string>("EMBEDDING_MODEL") ||
-            "text-embedding-3-small",
+            this.config.get<string>("LOCAL_EMBEDDING_MODEL") ||
+            "Xenova/multilingual-e5-small",
           contentHash,
           status: "PENDING",
         },
@@ -373,6 +742,42 @@ export class OpenAlexImportService {
           isCorresponding: item.isCorresponding,
         },
       });
+    }
+
+    // OpenAlex can return a work from an `authorships.author.id` filter even
+    // when the canonical author is absent from the response authorship array
+    // (usually after an author merge or very large collaboration cleanup).
+    // The filtered result is still part of that author's works collection, so
+    // preserve the canonical relation used to request the page.
+    if (canonicalAuthorId) {
+      await this.prisma.paperAuthor.upsert({
+        where: {
+          paperId_authorId: { paperId: paper.id, authorId: canonicalAuthorId },
+        },
+        update: {},
+        create: {
+          paperId: paper.id,
+          authorId: canonicalAuthorId,
+          authorPosition: "middle",
+          isCorresponding: false,
+        },
+      });
+    }
+  }
+
+  private async persistWorkPage(
+    rows: OpenAlexWorkRaw[],
+    concurrency: number,
+    canonicalAuthorId?: string,
+  ): Promise<void> {
+    for (let index = 0; index < rows.length; index += concurrency) {
+      await Promise.all(
+        rows
+          .slice(index, index + concurrency)
+          .map((rawWork) =>
+            this.persistWork(mapOpenAlexWork(rawWork), canonicalAuthorId),
+          ),
+      );
     }
   }
 
@@ -425,9 +830,9 @@ export class OpenAlexImportService {
         params.perPage ||
           this.config.get("IMPORT_BATCH_SIZE") ||
           process.env.IMPORT_BATCH_SIZE,
-        200,
+        100,
       ),
-      200,
+      100,
     );
     const institutionId =
       params.institutionId ||
@@ -507,8 +912,8 @@ export class OpenAlexImportService {
       1_000,
     );
     const perPage = Math.min(
-      this.positiveInt(params.perPage || process.env.IMPORT_BATCH_SIZE, 200),
-      200,
+      this.positiveInt(params.perPage || process.env.IMPORT_BATCH_SIZE, 100),
+      100,
     );
     const institutionId =
       params.institutionId ||
@@ -644,6 +1049,11 @@ export class OpenAlexImportService {
           );
         }
 
+        const keywords = this.parseKeywords(row.keywords, keywordLimit);
+        const department =
+          row.department?.trim() ||
+          inferResearcherDepartment(row.position, keywords);
+
         const openAlexAuthor = await this.resolveOpenAlexAuthor(
           row.name,
           row.openalex_id || undefined,
@@ -661,6 +1071,7 @@ export class OpenAlexImportService {
                 name: row.name,
                 photoUrl: row.photo_url || null,
                 title: row.position || null,
+                department,
               },
             })
           : await this.prisma.researcher.create({
@@ -671,9 +1082,9 @@ export class OpenAlexImportService {
                 name: row.name,
                 photoUrl: row.photo_url || null,
                 title: row.position || null,
+                department,
               },
             });
-        const keywords = this.parseKeywords(row.keywords, keywordLimit);
         await this.prisma.researcherKeyword.deleteMany({
           where: { researcherId: researcher.id },
         });
@@ -729,6 +1140,14 @@ export class OpenAlexImportService {
     const researchers = await this.prisma.researcher.findMany({
       where: { authorId: null },
       orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        openalexId: true,
+        profileUrl: true,
+        author: { select: { openalexId: true } },
+      },
     });
     let totalImported = 0;
     const failures: string[] = [];
@@ -738,13 +1157,29 @@ export class OpenAlexImportService {
         select: { id: true, openalexId: true, displayName: true },
       });
       const authorsByName = new Map<string, typeof authors>();
+      const authorsByLastName = new Map<string, typeof authors>();
       for (const author of authors) {
         const normalized = this.normalizePersonName(author.displayName);
         authorsByName.set(normalized, [
           ...(authorsByName.get(normalized) || []),
           author,
         ]);
+        const lastName = normalized.split(" ").at(-1);
+        if (lastName) {
+          authorsByLastName.set(lastName, [
+            ...(authorsByLastName.get(lastName) || []),
+            author,
+          ]);
+        }
       }
+      const unavailableAuthorIds = new Set(
+        (
+          await this.prisma.researcher.findMany({
+            where: { authorId: { not: null } },
+            select: { authorId: true },
+          })
+        ).flatMap(({ authorId }) => (authorId ? [authorId] : [])),
+      );
       const researcherNameCounts = new Map<string, number>();
       for (const researcher of researchers) {
         const normalized = this.normalizePersonName(researcher.name);
@@ -767,29 +1202,59 @@ export class OpenAlexImportService {
             where: { id: researcher.id },
             data: { authorId: author.id, openalexId: author.openalexId },
           });
+          unavailableAuthorIds.add(author.id);
           totalImported++;
         } else {
           unresolved.push(researcher);
         }
       }
+
+      const remotelyUnresolved = [] as typeof researchers;
+      let fuzzyLocalMatches = 0;
+      for (const researcher of unresolved) {
+        const normalized = this.normalizePersonName(researcher.name);
+        const lastName = normalized.split(" ").at(-1);
+        const author = lastName
+          ? this.pickLocalAuthor(
+              researcher,
+              authorsByLastName.get(lastName) || [],
+              unavailableAuthorIds,
+            )
+          : null;
+        if (!author) {
+          remotelyUnresolved.push(researcher);
+          continue;
+        }
+        await this.prisma.researcher.update({
+          where: { id: researcher.id },
+          data: { authorId: author.id, openalexId: author.openalexId },
+        });
+        unavailableAuthorIds.add(author.id);
+        totalImported++;
+        fuzzyLocalMatches++;
+        this.logger.log(
+          `Linked ${researcher.name} to local OpenAlex author ${author.displayName}`,
+        );
+      }
       this.logger.log(
-        `Linked ${totalImported} researchers from local OpenAlex authors; resolving ${unresolved.length} through OpenAlex.`,
+        `Linked ${totalImported} researchers from local OpenAlex authors (${fuzzyLocalMatches} fuzzy); resolving ${remotelyUnresolved.length} through OpenAlex.`,
       );
 
       const concurrency = 5;
-      for (let index = 0; index < unresolved.length; index += concurrency) {
-        const batch = unresolved.slice(index, index + concurrency);
+      for (
+        let index = 0;
+        index < remotelyUnresolved.length;
+        index += concurrency
+      ) {
+        const batch = remotelyUnresolved.slice(index, index + concurrency);
         const results = await Promise.allSettled(
           batch.map(async (researcher) => {
-            const raw = await this.resolveOpenAlexAuthor(
-              researcher.name,
-              researcher.openalexId || undefined,
-            );
-            const authorId = await this.upsertOpenAlexAuthor(raw);
-            await this.prisma.researcher.update({
-              where: { id: researcher.id },
-              data: { authorId, openalexId: raw.id },
-            });
+            const raw = await this.resolveAndLinkResearcherAuthor(researcher);
+            if (!raw) {
+              throw new Error(
+                "No unique high-confidence OpenAlex author match",
+              );
+            }
           }),
         );
         results.forEach((result, resultIndex) => {
@@ -834,6 +1299,435 @@ export class OpenAlexImportService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`Researcher-author linking failed: ${message}`);
+      return {
+        totalFetched: researchers.length,
+        totalImported,
+        status: "FAILED",
+      };
+    }
+  }
+
+  private parseResearcherWorkCheckpoint(
+    value: string | null,
+  ): ResearcherWorkCheckpoint {
+    const initial: ResearcherWorkCheckpoint = {
+      lastCompletedResearcherId: null,
+      activeResearcherId: null,
+      worksCursor: "*",
+    };
+    if (!value || value === "*") return initial;
+    try {
+      const parsed = JSON.parse(value) as Partial<ResearcherWorkCheckpoint>;
+      return {
+        lastCompletedResearcherId:
+          typeof parsed.lastCompletedResearcherId === "string"
+            ? parsed.lastCompletedResearcherId
+            : null,
+        activeResearcherId:
+          typeof parsed.activeResearcherId === "string"
+            ? parsed.activeResearcherId
+            : null,
+        worksCursor:
+          typeof parsed.worksCursor === "string" && parsed.worksCursor
+            ? parsed.worksCursor
+            : "*",
+      };
+    } catch {
+      return initial;
+    }
+  }
+
+  private async resolveAndLinkResearcherAuthor(researcher: {
+    id: string;
+    name: string;
+    email: string | null;
+    openalexId: string | null;
+    profileUrl: string | null;
+    author: { openalexId: string } | null;
+  }): Promise<OpenAlexAuthorEntityRaw | null> {
+    const institutionId =
+      this.config.get<string>("UIUC_OPENALEX_INSTITUTION_ID") ||
+      process.env.UIUC_OPENALEX_INSTITUTION_ID ||
+      "I157725225";
+    const knownOpenAlexId =
+      researcher.author?.openalexId || researcher.openalexId || undefined;
+    let raw: OpenAlexAuthorEntityRaw | null = null;
+
+    if (knownOpenAlexId) {
+      try {
+        raw = await this.client.getAuthor(knownOpenAlexId);
+        const storedScore = this.authorNameScore(researcher.name, raw);
+        if (storedScore < 98) {
+          const searched = await this.searchOpenAlexAuthor(
+            researcher.name,
+            researcher.email,
+            institutionId,
+          );
+          const searchedScore = searched
+            ? this.authorNameScore(researcher.name, searched)
+            : 0;
+          if (searched && searchedScore > storedScore) {
+            this.logger.warn(
+              `Replaced stored OpenAlex author ${raw.id} for ${researcher.name} with higher-confidence ${searched.id}`,
+            );
+            raw = searched;
+          } else if (storedScore < 80) {
+            raw = searched;
+          }
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("404")) throw error;
+        this.logger.warn(
+          `Stored OpenAlex author ID is invalid for ${researcher.name}; searching again`,
+        );
+      }
+    }
+    raw ||= await this.searchOpenAlexAuthor(
+      researcher.name,
+      researcher.email,
+      institutionId,
+    );
+    if (!raw) return null;
+
+    const authorId = await this.upsertOpenAlexAuthor(raw);
+    const conflictingResearcher = await this.prisma.researcher.findFirst({
+      where: { authorId, id: { not: researcher.id } },
+      select: { id: true, name: true },
+    });
+    if (conflictingResearcher) {
+      this.logger.warn(
+        `OpenAlex author ${raw.id} is already linked to ${conflictingResearcher.name}; skipped ${researcher.name}`,
+      );
+      return null;
+    }
+
+    const normalized = mapOpenAlexAuthor(raw);
+    await this.prisma.researcher.update({
+      where: { id: researcher.id },
+      data: {
+        authorId,
+        openalexId: raw.id,
+        profileUrl: researcher.profileUrl || normalized.profileUrl,
+        worksCount: normalized.worksCount,
+        citedByCount: normalized.citedByCount,
+      },
+    });
+    return raw;
+  }
+
+  async runResearcherPaperBackfill(
+    params: {
+      researcherId?: string;
+      perPage?: number;
+      maxResearchers?: number;
+      resume?: boolean;
+    } = {},
+  ): Promise<
+    ImportResult & { researchersProcessed: number; unresolved: number }
+  > {
+    const source = params.researcherId
+      ? `openalex_researcher_works:${params.researcherId}`
+      : "openalex_researcher_works";
+    const run = await this.createRun(source, params.resume !== false);
+    const checkpoint = this.parseResearcherWorkCheckpoint(run.cursor);
+    const perPage = Math.min(
+      this.positiveInt(
+        params.perPage ||
+          this.config.get("RESEARCHER_PAPER_IMPORT_BATCH_SIZE") ||
+          process.env.RESEARCHER_PAPER_IMPORT_BATCH_SIZE,
+        100,
+      ),
+      100,
+    );
+    const maxResearchers = params.maxResearchers
+      ? this.positiveInt(params.maxResearchers, Number.MAX_SAFE_INTEGER)
+      : Number.MAX_SAFE_INTEGER;
+    const persistConcurrency = Math.min(
+      this.positiveInt(
+        this.config.get("RESEARCHER_PAPER_PERSIST_CONCURRENCY") ||
+          process.env.RESEARCHER_PAPER_PERSIST_CONCURRENCY,
+        8,
+      ),
+      20,
+    );
+    const researchers = await this.prisma.researcher.findMany({
+      where: params.researcherId ? { id: params.researcherId } : undefined,
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        openalexId: true,
+        profileUrl: true,
+        author: { select: { openalexId: true } },
+      },
+    });
+    if (params.researcherId && !researchers.length) {
+      const message = `Researcher ${params.researcherId} was not found`;
+      await this.prisma.importRun.update({
+        where: { id: run.id },
+        data: {
+          status: "FAILED",
+          errorMessage: message,
+          completedAt: new Date(),
+        },
+      });
+      return {
+        totalFetched: 0,
+        totalImported: 0,
+        researchersProcessed: 0,
+        unresolved: 1,
+        status: "FAILED",
+      };
+    }
+
+    let startIndex = 0;
+    if (checkpoint.activeResearcherId) {
+      const activeIndex = researchers.findIndex(
+        ({ id }) => id === checkpoint.activeResearcherId,
+      );
+      if (activeIndex >= 0) startIndex = activeIndex;
+    } else if (checkpoint.lastCompletedResearcherId) {
+      const nextIndex = researchers.findIndex(
+        ({ id }) => id > checkpoint.lastCompletedResearcherId!,
+      );
+      startIndex = nextIndex >= 0 ? nextIndex : researchers.length;
+    }
+
+    let totalFetched = run.totalFetched;
+    let totalImported = run.importedCount;
+    let researchersProcessed = 0;
+    const unresolved: string[] = [];
+    this.logger.log(
+      `Backfilling all OpenAlex papers for ${Math.min(researchers.length - startIndex, maxResearchers)} researcher(s), ${perPage} works per page`,
+    );
+
+    try {
+      for (
+        let index = startIndex;
+        index < researchers.length && researchersProcessed < maxResearchers;
+        index++
+      ) {
+        const researcher = researchers[index];
+        const resumingActive = checkpoint.activeResearcherId === researcher.id;
+        checkpoint.activeResearcherId = researcher.id;
+        if (!resumingActive) checkpoint.worksCursor = "*";
+        await this.prisma.importRun.update({
+          where: { id: run.id },
+          data: { cursor: JSON.stringify(checkpoint) },
+        });
+
+        const openAlexAuthor =
+          await this.resolveAndLinkResearcherAuthor(researcher);
+        if (!openAlexAuthor) {
+          unresolved.push(`${researcher.id}:${researcher.name}`);
+          checkpoint.lastCompletedResearcherId = researcher.id;
+          checkpoint.activeResearcherId = null;
+          checkpoint.worksCursor = "*";
+          researchersProcessed++;
+          await this.prisma.importRun.update({
+            where: { id: run.id },
+            data: { cursor: JSON.stringify(checkpoint) },
+          });
+          this.logger.warn(
+            `No unique OpenAlex author match for ${researcher.name}; skipped without guessing`,
+          );
+          continue;
+        }
+
+        const linkedAuthorId = this.authorCache.get(openAlexAuthor.id);
+        if (!linkedAuthorId) {
+          throw new Error(
+            `Local author link was not created for ${researcher.name}`,
+          );
+        }
+        let worksCursor = checkpoint.worksCursor || "*";
+        const isFullScan = worksCursor === "*";
+        let researcherPaperCount = 0;
+        let expectedWorks: number | null = null;
+        const fetchedOpenAlexIds = new Set<string>();
+        while (worksCursor) {
+          const response = await this.client.getWorks({
+            authorId: openAlexAuthor.id,
+            institutionId: null,
+            cursor: worksCursor,
+            perPage,
+          });
+          expectedWorks ??= response.meta.count;
+          if (!response.results.length) break;
+
+          for (const work of response.results) {
+            fetchedOpenAlexIds.add(work.id);
+          }
+
+          await this.persistWorkPage(
+            response.results,
+            persistConcurrency,
+            linkedAuthorId,
+          );
+          totalImported += response.results.length;
+          researcherPaperCount += response.results.length;
+          totalFetched += response.results.length;
+          const nextCursor = response.meta.next_cursor || "";
+          if (nextCursor && nextCursor === worksCursor) {
+            throw new Error(
+              `OpenAlex returned a repeated works cursor for ${researcher.name}`,
+            );
+          }
+          worksCursor = nextCursor;
+          checkpoint.worksCursor = worksCursor;
+          await this.prisma.importRun.update({
+            where: { id: run.id },
+            data: {
+              cursor: JSON.stringify(checkpoint),
+              totalFetched,
+              importedCount: totalImported,
+            },
+          });
+        }
+
+        if (isFullScan) {
+          const currentOpenAlexIds = [...fetchedOpenAlexIds];
+          const removed = await this.prisma.paperAuthor.deleteMany({
+            where: {
+              authorId: linkedAuthorId,
+              ...(currentOpenAlexIds.length
+                ? {
+                    paper: {
+                      openalexId: { notIn: currentOpenAlexIds },
+                    },
+                  }
+                : {}),
+            },
+          });
+          if (removed.count > 0) {
+            this.logger.log(
+              `Removed ${removed.count} stale paper relation(s) for ${researcher.name}`,
+            );
+          }
+        }
+
+        const linkedPaperCount = await this.prisma.paperAuthor.count({
+          where: { authorId: linkedAuthorId },
+        });
+        if (expectedWorks !== null && linkedPaperCount !== expectedWorks) {
+          throw new Error(
+            `Incomplete paper sync for ${researcher.name}: ${linkedPaperCount}/${expectedWorks} linked papers after the final cursor`,
+          );
+        }
+
+        checkpoint.lastCompletedResearcherId = researcher.id;
+        checkpoint.activeResearcherId = null;
+        checkpoint.worksCursor = "*";
+        researchersProcessed++;
+        await this.prisma.importRun.update({
+          where: { id: run.id },
+          data: {
+            cursor: JSON.stringify(checkpoint),
+            totalFetched,
+            importedCount: totalImported,
+          },
+        });
+        this.logger.log(
+          `Researcher papers ${researchersProcessed}/${Math.min(researchers.length - startIndex, maxResearchers)}: ${researcher.name} (${researcherPaperCount} fetched, ${linkedPaperCount}/${expectedWorks ?? "unknown"} linked)`,
+        );
+      }
+
+      const warning = unresolved.length
+        ? `${unresolved.length} researcher(s) could not be matched safely: ${unresolved.slice(0, 20).join(" | ")}`
+        : null;
+      await this.prisma.importRun.update({
+        where: { id: run.id },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+          cursor: JSON.stringify(checkpoint),
+          totalFetched,
+          importedCount: totalImported,
+          errorMessage: warning,
+        },
+      });
+      if (warning) this.logger.warn(warning);
+      return {
+        totalFetched,
+        totalImported,
+        researchersProcessed,
+        unresolved: unresolved.length,
+        status: "COMPLETED",
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await this.prisma.importRun.update({
+        where: { id: run.id },
+        data: {
+          status: "FAILED",
+          errorMessage: message,
+          completedAt: new Date(),
+          cursor: JSON.stringify(checkpoint),
+          totalFetched,
+          importedCount: totalImported,
+        },
+      });
+      this.logger.error(
+        `Researcher paper backfill failed after ${researchersProcessed} researcher(s): ${message}`,
+      );
+      return {
+        totalFetched,
+        totalImported,
+        researchersProcessed,
+        unresolved: unresolved.length,
+        status: "FAILED",
+      };
+    }
+  }
+
+  async backfillResearcherDepartments(): Promise<ImportResult> {
+    const researchers = await this.prisma.researcher.findMany({
+      where: { department: null },
+      orderBy: { createdAt: "asc" },
+      select: {
+        id: true,
+        title: true,
+        keywords: { select: { keyword: true } },
+      },
+    });
+    let totalImported = 0;
+
+    try {
+      for (let index = 0; index < researchers.length; index += 100) {
+        const batch = researchers.slice(index, index + 100);
+        const updates = batch.flatMap((researcher) => {
+          const department = inferResearcherDepartment(
+            researcher.title,
+            researcher.keywords.map(({ keyword }) => keyword),
+          );
+          return department
+            ? [
+                this.prisma.researcher.update({
+                  where: { id: researcher.id },
+                  data: { department },
+                }),
+              ]
+            : [];
+        });
+        if (updates.length) {
+          await this.prisma.$transaction(updates);
+          totalImported += updates.length;
+        }
+        this.logger.log(
+          `Researcher department backfill: ${Math.min(index + batch.length, researchers.length)}/${researchers.length}`,
+        );
+      }
+
+      return {
+        totalFetched: researchers.length,
+        totalImported,
+        status: "COMPLETED",
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Researcher department backfill failed: ${message}`);
       return {
         totalFetched: researchers.length,
         totalImported,

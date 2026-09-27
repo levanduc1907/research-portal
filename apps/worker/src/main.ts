@@ -17,6 +17,8 @@ async function bootstrap() {
     command === "import-faculty-csv" ||
     command === "import-phase2" ||
     command === "link-researcher-authors" ||
+    command === "backfill-researcher-papers" ||
+    command === "backfill-researcher-departments" ||
     command === "sync-vectors"
   ) {
     const importer = app.get(OpenAlexImportService);
@@ -49,6 +51,38 @@ async function bootstrap() {
     }
     if (command === "link-researcher-authors") {
       const result = await importer.linkExistingResearchersToAuthors();
+      failed ||= result.status === "FAILED";
+    }
+    if (command === "backfill-researcher-papers") {
+      const researcherId = process.argv
+        .find((arg) => arg.startsWith("--researcher-id="))
+        ?.split("=")[1];
+      const perPage = Number(
+        process.argv
+          .find((arg) => arg.startsWith("--per-page="))
+          ?.split("=")[1] || 100,
+      );
+      const maxResearchersValue = process.argv
+        .find((arg) => arg.startsWith("--max-researchers="))
+        ?.split("=")[1];
+      const result = await importer.runResearcherPaperBackfill({
+        researcherId,
+        perPage,
+        maxResearchers: maxResearchersValue
+          ? Number(maxResearchersValue)
+          : undefined,
+        resume: !process.argv.includes("--restart"),
+      });
+      logger.log(
+        `Researcher paper backfill finished: ${result.researchersProcessed} researchers, ${result.totalImported} works persisted, ${result.unresolved} unresolved`,
+      );
+      failed ||= result.status === "FAILED";
+    }
+    if (command === "backfill-researcher-departments") {
+      const result = await importer.backfillResearcherDepartments();
+      logger.log(
+        `Department backfill finished: ${result.totalImported}/${result.totalFetched} researchers updated`,
+      );
       failed ||= result.status === "FAILED";
     }
     if (command === "sync-vectors") {
