@@ -29,6 +29,13 @@ interface Message {
   requestId?: string;
 }
 
+interface StoredConversation {
+  version: 1;
+  conversationId: string;
+  messages: Message[];
+  updatedAt: number;
+}
+
 const INITIAL_MESSAGE: Message = {
   id: "welcome",
   sender: "assistant",
@@ -41,14 +48,148 @@ const SUGGESTIONS = [
   "Who researches artificial intelligence?",
 ];
 
+const CONVERSATION_STORAGE_KEY = "uiuc-research-assistant-conversation-v1";
+const MAX_PERSISTED_MESSAGES = 50;
+const MAX_PERSISTED_MESSAGE_LENGTH = 20_000;
+const MAX_PERSISTED_SOURCES = 10;
+
+function isConversationId(value: unknown): value is string {
+  return typeof value === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(value);
+}
+
+function restoreMessage(value: unknown): Message | null {
+  if (!value || typeof value !== "object") return null;
+
+  const candidate = value as Partial<Message>;
+  if (
+    typeof candidate.id !== "string" ||
+    (candidate.sender !== "user" && candidate.sender !== "assistant") ||
+    typeof candidate.text !== "string"
+  ) {
+    return null;
+  }
+
+  const wasInterrupted =
+    candidate.isStreaming === true ||
+    candidate.phase === "thinking" ||
+    candidate.phase === "generating";
+  const sources = Array.isArray(candidate.sources)
+    ? candidate.sources
+        .filter(
+          (source): source is ChatCitationDto =>
+            Boolean(source) &&
+            typeof source === "object" &&
+            typeof source.paperId === "string" &&
+            typeof source.title === "string" &&
+            typeof source.year === "number" &&
+            typeof source.citedByCount === "number",
+        )
+        .slice(0, MAX_PERSISTED_SOURCES)
+    : undefined;
+
+  return {
+    id: candidate.id.slice(0, 120),
+    sender: candidate.sender,
+    text: candidate.text.slice(0, MAX_PERSISTED_MESSAGE_LENGTH),
+    sources,
+    route:
+      typeof candidate.route === "string"
+        ? candidate.route.slice(0, 40)
+        : undefined,
+    isStreaming: false,
+    phase: wasInterrupted ? "stopped" : candidate.phase,
+    errorMessage:
+      typeof candidate.errorMessage === "string"
+        ? candidate.errorMessage.slice(0, 2_000)
+        : undefined,
+    requestId:
+      typeof candidate.requestId === "string"
+        ? candidate.requestId.slice(0, 100)
+        : undefined,
+  };
+}
+
+function loadStoredConversation(): StoredConversation | null {
+  try {
+    const raw = window.localStorage.getItem(CONVERSATION_STORAGE_KEY);
+    if (!raw) return null;
+
+    const candidate = JSON.parse(raw) as Partial<StoredConversation>;
+    if (
+      candidate.version !== 1 ||
+      !isConversationId(candidate.conversationId) ||
+      !Array.isArray(candidate.messages)
+    ) {
+      return null;
+    }
+
+    const messages = candidate.messages
+      .map(restoreMessage)
+      .filter((message): message is Message => message !== null)
+      .slice(-MAX_PERSISTED_MESSAGES);
+
+    if (messages.length === 0) return null;
+
+    return {
+      version: 1,
+      conversationId: candidate.conversationId,
+      messages,
+      updatedAt:
+        typeof candidate.updatedAt === "number"
+          ? candidate.updatedAt
+          : Date.now(),
+    };
+  } catch {
+    window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
+    return null;
+  }
+}
+
 export function AiAssistant(): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
+  const [hasRestoredConversation, setHasRestoredConversation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const conversationIdRef = useRef<string>(crypto.randomUUID());
+  const conversationIdRef = useRef<string>("");
+
+  useEffect(() => {
+    const storedConversation = loadStoredConversation();
+    conversationIdRef.current =
+      storedConversation?.conversationId ?? crypto.randomUUID();
+    if (storedConversation) {
+      setMessages(storedConversation.messages);
+    }
+    setHasRestoredConversation(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasRestoredConversation || !conversationIdRef.current) return;
+
+    const persistedMessages = messages
+      .map(restoreMessage)
+      .filter((message): message is Message => message !== null)
+      .slice(-MAX_PERSISTED_MESSAGES);
+    const payload: StoredConversation = {
+      version: 1,
+      conversationId: conversationIdRef.current,
+      messages: persistedMessages.length
+        ? persistedMessages
+        : [INITIAL_MESSAGE],
+      updatedAt: Date.now(),
+    };
+
+    try {
+      window.localStorage.setItem(
+        CONVERSATION_STORAGE_KEY,
+        JSON.stringify(payload),
+      );
+    } catch {
+      // Storage may be unavailable in private mode or blocked by browser policy.
+    }
+  }, [hasRestoredConversation, messages]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -80,7 +221,11 @@ export function AiAssistant(): React.JSX.Element {
 
   const sendMessage = async (suggestion?: string): Promise<void> => {
     const query = (suggestion ?? input).trim();
-    if (!query || isStreaming) return;
+    if (!query || isStreaming || !hasRestoredConversation) return;
+
+    if (!conversationIdRef.current) {
+      conversationIdRef.current = crypto.randomUUID();
+    }
 
     const timestamp = Date.now();
     const assistantId = `assistant-${timestamp}`;
@@ -183,6 +328,7 @@ export function AiAssistant(): React.JSX.Element {
   const clearConversation = (): void => {
     stopStreaming();
     conversationIdRef.current = crypto.randomUUID();
+    window.localStorage.removeItem(CONVERSATION_STORAGE_KEY);
     setMessages([INITIAL_MESSAGE]);
   };
 

@@ -624,11 +624,14 @@ sequenceDiagram
 ### 11.3 Conversation context
 
 - The browser creates one UUID per visible conversation.
+- The browser persists the UUID, messages, citations, and UI-safe error metadata in versioned `localStorage`, so a page reload restores the active conversation.
+- Persistence is bounded to the latest 50 messages, 20,000 characters per message, and 10 citations per message. Stored data is validated before it is rendered again.
+- A stream interrupted by navigation or reload is restored as stopped; it is never presented as if generation were still active.
 - The API prefixes that value with the signed session or authenticated user identity.
 - Recent completed `ChatRequest` records are loaded for the same scoped conversation.
 - Previous answers are used only to resolve references; current database facts and evidence take priority.
 - Previous citations allow questions such as `summarize paper 1`, `what is her newest paper`, or `what does that project discuss` to resolve correctly.
-- Clearing the assistant creates a new conversation UUID.
+- Clearing the assistant removes the persisted browser history and creates a new conversation UUID.
 
 ### 11.4 Structured retrieval safeguards
 
