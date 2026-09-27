@@ -298,6 +298,16 @@ export class OpenAlexImportService {
   }
 
   private middleNameMatchCount(left: string[], right: string[]): number {
+    // Treat a hyphenated or split middle name as equivalent to its compact
+    // directory spelling (for example, Chenchuan vs Chen-Chuan).
+    if (
+      left.length > 0 &&
+      right.length > 0 &&
+      left.join("") === right.join("")
+    ) {
+      return Math.max(left.length, right.length);
+    }
+
     const rows = left.length + 1;
     const columns = right.length + 1;
     const scores = Array.from({ length: rows }, () =>
@@ -514,20 +524,13 @@ export class OpenAlexImportService {
   ): OpenAlexAuthorEntityRaw | null {
     const ranked = candidates
       .map((candidate) => {
-        const candidateNames = [
-          candidate.display_name,
-          ...(candidate.display_name_alternatives || []),
-        ].filter((value): value is string => Boolean(value));
         const nameScore = this.authorNameScore(researcher.name, candidate);
         const primaryNameScore = candidate.display_name
           ? this.personNameScore(researcher.name, candidate.display_name)
           : 0;
-        const emailScore = Math.max(
-          0,
-          ...candidateNames.map((value) =>
-            this.emailIdentityScore(researcher.email, value),
-          ),
-        );
+        const emailScore = candidate.display_name
+          ? this.emailIdentityScore(researcher.email, candidate.display_name)
+          : 0;
         const contextScore = this.researchContextScore(researcher, candidate);
         return {
           candidate,
@@ -543,10 +546,10 @@ export class OpenAlexImportService {
           nameScore >= 75 &&
           score >= 85 &&
           // OpenAlex alternatives occasionally contain a different person
-          // after an author merge. Do not trust an alternative-name match
-          // when the primary name conflicts unless independent identity
-          // signals also agree.
-          (primaryNameScore >= 75 || emailScore >= 12 || contextScore >= 12) &&
+          // after an author merge. A compatible primary display name is
+          // mandatory; e-mail and broad research topics cannot make a
+          // conflicting primary identity safe.
+          primaryNameScore >= 75 &&
           (!requireEmailSignal || emailScore >= 12 || contextScore >= 12),
       )
       .sort(
@@ -1636,7 +1639,9 @@ export class OpenAlexImportService {
     if (knownOpenAlexId) {
       try {
         raw = await this.client.getAuthor(knownOpenAlexId);
-        const storedScore = this.authorNameScore(researcher.name, raw);
+        const storedPrimaryScore = raw.display_name
+          ? this.personNameScore(researcher.name, raw.display_name)
+          : 0;
         const storedWorksCount = raw.works_count || 0;
         const mayBeFragmentedAuthor = storedWorksCount <= 10;
         // A previously linked author with a strong name match is already a
@@ -1644,27 +1649,27 @@ export class OpenAlexImportService {
         // middle-name or initial variation burns the daily OpenAlex budget
         // without improving the link. Search again only for a genuinely weak
         // match or a suspiciously small OpenAlex author fragment.
-        if (storedScore < 80 || mayBeFragmentedAuthor) {
+        if (storedPrimaryScore < 75 || mayBeFragmentedAuthor) {
           const searched = await this.searchOpenAlexAuthor(
             researcher,
             institutionId,
           );
-          const searchedScore = searched
-            ? this.authorNameScore(researcher.name, searched)
+          const searchedPrimaryScore = searched?.display_name
+            ? this.personNameScore(researcher.name, searched.display_name)
             : 0;
           const searchedWorksCount = searched?.works_count || 0;
           const shouldReplaceStoredAuthor =
             searched &&
-            (searchedScore > storedScore ||
+            (searchedPrimaryScore > storedPrimaryScore ||
               (mayBeFragmentedAuthor &&
-                searchedScore === storedScore &&
+                searchedPrimaryScore === storedPrimaryScore &&
                 searchedWorksCount > storedWorksCount));
           if (shouldReplaceStoredAuthor) {
             this.logger.warn(
               `Replaced stored OpenAlex author ${raw.id} (${storedWorksCount} works) for ${researcher.name} with ${searched.id} (${searchedWorksCount} works)`,
             );
             raw = searched;
-          } else if (storedScore < 80) {
+          } else if (storedPrimaryScore < 75) {
             raw = searched;
           }
         }
@@ -1755,7 +1760,13 @@ export class OpenAlexImportService {
       20,
     );
     const researchers = await this.prisma.researcher.findMany({
-      where: params.researcherId ? { id: params.researcherId } : undefined,
+      // A paper scan requires a verified OpenAlex identity. Global backfills
+      // deliberately skip unresolved researchers instead of spending author
+      // search quota or risking a guessed identity; they can be linked by the
+      // dedicated researcher-author job first.
+      where: params.researcherId
+        ? { id: params.researcherId }
+        : { authorId: { not: null } },
       orderBy: { id: "asc" },
       select: {
         id: true,

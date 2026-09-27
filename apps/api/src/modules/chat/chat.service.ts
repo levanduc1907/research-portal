@@ -639,6 +639,8 @@ export class ChatService {
       "the",
       "what",
       "which",
+      "work",
+      "works",
       "paper",
       "papers",
       "project",
@@ -691,18 +693,26 @@ export class ChatService {
         },
       ],
     }));
-    const where: Prisma.PaperWhereInput = {
-      authors: { some: { authorId: researcher.authorId } },
-      ...(topicFilters.length ? { AND: topicFilters } : {}),
-    };
-    const count = await this.prisma.paper.count({ where });
+    const count = topicFilters.length
+      ? await this.prisma.paper.count({
+          where: {
+            authors: { some: { authorId: researcher.authorId } },
+            AND: topicFilters,
+          },
+        })
+      : (
+          await this.prisma.researcher.findUnique({
+            where: { authorId: researcher.authorId },
+            select: { worksCount: true },
+          })
+        )?.worksCount || 0;
     const topicDescription = topicTerms.length
       ? ` matching topic terms "${topicTerms.join(", ")}"`
       : "";
     return {
       evidence: [],
       facts: [
-        `Database result: ${researcher.name} has ${count} publication(s)${topicDescription}. Treat the user's word "project" as "publication" because this portal currently stores publications, not research projects.`,
+        `Database result: ${researcher.name} has ${count} OpenAlex publication(s)${topicDescription}. For an unfiltered total, this is the canonical OpenAlex works count; topic-filtered counts use publications currently indexed in this portal. Treat the user's word "project" as "publication" because this portal currently stores publications, not research projects.`,
       ],
     };
   }
