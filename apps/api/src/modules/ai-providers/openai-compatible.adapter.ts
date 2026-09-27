@@ -16,6 +16,8 @@ export class OpenAiCompatibleAdapter implements AiProviderAdapter {
       if (!config.baseUrl) throw new Error("A base URL is required");
       const response = await fetch(`${config.baseUrl}/models`, {
         headers: { Authorization: `Bearer ${config.apiKey}` },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "error",
       });
       if (!response.ok) throw new Error(`Provider returned ${response.status}`);
       return { ok: true, latencyMs: Date.now() - startedAt };
@@ -45,8 +47,11 @@ export class OpenAiCompatibleAdapter implements AiProviderAdapter {
         model: config.model,
         messages: [{ role: "user", content: prompt }],
         stream: true,
+        max_tokens: 1_024,
+        temperature: 0.2,
       }),
       signal,
+      redirect: "error",
     });
     await consumeSse(response, (data) => {
       const chunk = JSON.parse(data) as {

@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   UseGuards,
@@ -37,7 +38,7 @@ export class AiCredentialsController {
 
   @Patch(":id")
   update(
-    @Param("id") id: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
     @Body() input: UpdateAiCredentialRequest,
   ): Promise<AiCredentialDto> {
     return this.credentials.update(id, input);
@@ -45,13 +46,17 @@ export class AiCredentialsController {
 
   @Post(":id/test")
   @HttpCode(200)
-  test(@Param("id") id: string): Promise<AiCredentialDto> {
+  test(
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
+  ): Promise<AiCredentialDto> {
     return this.credentials.test(id);
   }
 
   @Delete(":id")
   @HttpCode(204)
-  async remove(@Param("id") id: string): Promise<void> {
+  async remove(
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
+  ): Promise<void> {
     await this.credentials.remove(id);
   }
 }

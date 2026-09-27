@@ -17,6 +17,8 @@ export class OpenAiAdapter implements AiProviderAdapter {
         `${config.baseUrl || "https://api.openai.com/v1"}/models`,
         {
           headers: { Authorization: `Bearer ${config.apiKey}` },
+          signal: AbortSignal.timeout(10_000),
+          redirect: "error",
         },
       );
       if (!response.ok) throw new Error(`OpenAI returned ${response.status}`);
@@ -49,8 +51,10 @@ export class OpenAiAdapter implements AiProviderAdapter {
           input: prompt,
           stream: true,
           store: false,
+          max_output_tokens: 1_024,
         }),
         signal,
+        redirect: "error",
       },
     );
     await consumeSse(response, (data) => {

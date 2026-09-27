@@ -8,12 +8,14 @@ import { ResearcherModule } from "./modules/researchers/researchers.module";
 import { ChatModule } from "./modules/chat/chat.module";
 import { AiProvidersModule } from "./modules/ai-providers/ai-providers.module";
 import { HealthController } from "./modules/health/health.controller";
+import { SecurityModule } from "./modules/security/security.module";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    SecurityModule,
     DatabaseModule,
     InstitutionModule,
     AnalyticsModule,

@@ -17,6 +17,8 @@ export class GeminiAdapter implements AiProviderAdapter {
         config.baseUrl || "https://generativelanguage.googleapis.com/v1beta";
       const response = await fetch(`${baseUrl}/models`, {
         headers: { "x-goog-api-key": config.apiKey },
+        signal: AbortSignal.timeout(10_000),
+        redirect: "error",
       });
       if (!response.ok) throw new Error(`Gemini returned ${response.status}`);
       return { ok: true, latencyMs: Date.now() - startedAt };
@@ -47,8 +49,13 @@ export class GeminiAdapter implements AiProviderAdapter {
         },
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 1_024,
+            temperature: 0.2,
+          },
         }),
         signal,
+        redirect: "error",
       },
     );
     await consumeSse(response, (data) => {

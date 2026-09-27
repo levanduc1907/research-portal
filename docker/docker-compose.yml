@@ -17,7 +17,7 @@ services:
       MYSQL_USER: ${MYSQL_USER:-uiuc_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-uiuc_password}
     ports:
-      - "3306:3306"
+      - "127.0.0.1:3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -47,7 +47,7 @@ services:
     restart: unless-stopped
     command: redis-server --appendonly yes
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -66,8 +66,8 @@ services:
     container_name: uiuc_qdrant
     restart: unless-stopped
     ports:
-      - "6333:6333" # HTTP API & Web Dashboard (http://localhost:6333/dashboard)
-      - "6334:6334" # gRPC API
+      - "127.0.0.1:6333:6333" # Local HTTP API and dashboard
+      - "127.0.0.1:6334:6334" # Local gRPC API
     volumes:
       - qdrant_data:/qdrant/storage
     networks:
@@ -80,8 +80,9 @@ services:
     image: adminer:latest
     container_name: uiuc_adminer
     restart: unless-stopped
+    profiles: ["tools"]
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     environment:
       ADMINER_DEFAULT_SERVER: mysql
     depends_on:
@@ -97,10 +98,11 @@ services:
     image: rediscommander/redis-commander:latest
     container_name: uiuc_redis_commander
     restart: unless-stopped
+    profiles: ["tools"]
     environment:
       - REDIS_HOSTS=local:redis:6379
     ports:
-      - "8082:8081"
+      - "127.0.0.1:8082:8081"
     depends_on:
       redis:
         condition: service_healthy
