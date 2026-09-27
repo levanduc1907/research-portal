@@ -82,6 +82,7 @@ export interface PaginatedResult<T> {
 
 export interface ResearcherDto {
   id: string;
+  slug: string;
   openalexId?: string | null;
   name: string;
   email: string | null;

@@ -9,6 +9,7 @@ import {
 const FALLBACK_RESEARCHERS: ResearcherDto[] = [
   {
     id: "r-1",
+    slug: "jiawei-han",
     openalexId: "https://openalex.org/A5012345671",
     name: "Dr. Jiawei Han",
     email: "hanj@illinois.edu",
@@ -30,6 +31,7 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
   },
   {
     id: "r-2",
+    slug: "sarita-adve",
     openalexId: "https://openalex.org/A5012345672",
     name: "Dr. Sarita Adve",
     email: "sadve@illinois.edu",
@@ -50,6 +52,7 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
   },
   {
     id: "r-3",
+    slug: "marc-snir",
     openalexId: "https://openalex.org/A5012345673",
     name: "Dr. Marc Snir",
     email: "snir@illinois.edu",
@@ -70,6 +73,7 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
   },
   {
     id: "r-4",
+    slug: "nancy-m-amato",
     openalexId: "https://openalex.org/A5012345674",
     name: "Dr. Nancy M. Amato",
     email: "namato@illinois.edu",
@@ -90,6 +94,7 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
   },
   {
     id: "r-5",
+    slug: "stephen-long",
     openalexId: "https://openalex.org/A5012345675",
     name: "Dr. Stephen Long",
     email: "slong@illinois.edu",
@@ -122,6 +127,7 @@ export class ResearchersService {
 
     return {
       OR: [
+        { slug: id },
         { id },
         { authorId: id },
         { openalexId },
@@ -175,6 +181,7 @@ export class ResearchersService {
 
       const data: ResearcherDto[] = records.map((r) => ({
         id: r.id,
+        slug: r.slug,
         openalexId: r.author?.openalexId ?? r.openalexId,
         name: r.name,
         email: r.email,
@@ -237,7 +244,9 @@ export class ResearchersService {
       });
 
       if (!record) {
-        const fallback = FALLBACK_RESEARCHERS.find((r) => r.id === id);
+        const fallback = FALLBACK_RESEARCHERS.find(
+          (r) => r.slug === id || r.id === id,
+        );
         if (fallback) return fallback;
         throw new NotFoundException(`Researcher ${id} not found`);
       }
@@ -258,6 +267,7 @@ export class ResearchersService {
 
       return {
         id: record.id,
+        slug: record.slug,
         openalexId: record.author?.openalexId ?? record.openalexId,
         name: record.name,
         email: record.email,
@@ -272,7 +282,9 @@ export class ResearchersService {
       };
     } catch (e: any) {
       if (e instanceof NotFoundException) throw e;
-      const fallback = FALLBACK_RESEARCHERS.find((r) => r.id === id);
+      const fallback = FALLBACK_RESEARCHERS.find(
+        (r) => r.slug === id || r.id === id,
+      );
       if (fallback) return fallback;
       throw new NotFoundException(`Researcher ${id} not found`);
     }

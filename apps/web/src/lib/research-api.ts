@@ -76,14 +76,14 @@ export const researchApi = {
     return fetchJson<PaperDto>(`/v1/papers/${encodeURIComponent(id)}`);
   },
 
-  async getResearcher(id: string): Promise<ResearcherDto> {
+  async getResearcher(slug: string): Promise<ResearcherDto> {
     return fetchJson<ResearcherDto>(
-      `/v1/researchers/${encodeURIComponent(id)}`,
+      `/v1/researchers/${encodeURIComponent(slug)}`,
     );
   },
 
   async getResearcherPapers(
-    id: string,
+    slug: string,
     params: { page?: number; limit?: number } = {},
   ): Promise<PaginatedResult<ResearcherPaperDto>> {
     const query = new URLSearchParams();
@@ -92,7 +92,7 @@ export const researchApi = {
     const queryString = query.toString();
 
     return fetchJson<PaginatedResult<ResearcherPaperDto>>(
-      `/v1/researchers/${encodeURIComponent(id)}/papers${queryString ? `?${queryString}` : ""}`,
+      `/v1/researchers/${encodeURIComponent(slug)}/papers${queryString ? `?${queryString}` : ""}`,
     );
   },
 

@@ -14,6 +14,7 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { PrismaService } from "../../database/prisma.service";
+import { researcherSlugSuffix, slugifyResearcherName } from "@repo/database";
 
 type ImportResult = {
   totalFetched: number;
@@ -62,6 +63,35 @@ export class OpenAlexImportService {
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)
       : fallback;
+  }
+
+  private async uniqueResearcherSlug(
+    name: string,
+    email: string | null,
+    discriminator?: string,
+  ): Promise<string> {
+    const base = slugifyResearcherName(name.replace(/^(dr|prof)\.?\s+/i, ""));
+    const baseConflict = await this.prisma.researcher.findUnique({
+      where: { slug: base },
+      select: { id: true },
+    });
+    if (!baseConflict) return base;
+
+    const suffix =
+      researcherSlugSuffix(email) ||
+      slugifyResearcherName(discriminator || "researcher");
+    let candidate = `${base}-${suffix}`;
+    let sequence = 2;
+    while (
+      await this.prisma.researcher.findUnique({
+        where: { slug: candidate },
+        select: { id: true },
+      })
+    ) {
+      candidate = `${base}-${suffix}-${sequence}`;
+      sequence++;
+    }
+    return candidate;
   }
 
   private parseDelimitedLine(line: string, delimiter: string): string[] {
@@ -351,9 +381,7 @@ export class OpenAlexImportService {
     const sourceSet = new Set(sourcePhrases);
     const sourceTokens = new Set(
       sourcePhrases.flatMap((phrase) =>
-        phrase
-          .split(" ")
-          .filter((token) => token.length >= 4),
+        phrase.split(" ").filter((token) => token.length >= 4),
       ),
     );
     let exactMatches = 0;
@@ -518,9 +546,7 @@ export class OpenAlexImportService {
           // after an author merge. Do not trust an alternative-name match
           // when the primary name conflicts unless independent identity
           // signals also agree.
-          (primaryNameScore >= 75 ||
-            emailScore >= 12 ||
-            contextScore >= 12) &&
+          (primaryNameScore >= 75 || emailScore >= 12 || contextScore >= 12) &&
           (!requireEmailSignal || emailScore >= 12 || contextScore >= 12),
       )
       .sort(
@@ -682,10 +708,7 @@ export class OpenAlexImportService {
         .slice(0, 8)
         .map((candidate) => this.client.getAuthor(candidate.id)),
     );
-    const selected = this.pickOpenAlexAuthor(
-      researcher,
-      hydratedCandidates,
-    );
+    const selected = this.pickOpenAlexAuthor(researcher, hydratedCandidates);
     if (!selected) return null;
     const selectedEvidence = candidates.get(selected.id);
     this.logger.log(
@@ -1098,10 +1121,15 @@ export class OpenAlexImportService {
           const item = mapOpenAlexAuthor(raw);
           const authorId = await this.upsertOpenAlexAuthor(raw);
           const { keywords, ...researcherData } = item;
+          const slug = await this.uniqueResearcherSlug(
+            item.name,
+            null,
+            item.openalexId,
+          );
           const researcher = await this.prisma.researcher.upsert({
             where: { authorId },
             update: { ...researcherData, authorId },
-            create: { ...researcherData, authorId },
+            create: { ...researcherData, slug, authorId },
           });
           await this.prisma.researcherKeyword.deleteMany({
             where: { researcherId: researcher.id },
@@ -1231,6 +1259,11 @@ export class OpenAlexImportService {
             })
           : await this.prisma.researcher.create({
               data: {
+                slug: await this.uniqueResearcherSlug(
+                  row.name,
+                  row.email,
+                  openAlexAuthor.id,
+                ),
                 authorId,
                 openalexId: openAlexAuthor.id,
                 email: row.email,

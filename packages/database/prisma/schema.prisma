@@ -154,6 +154,7 @@ model PaperTopic {
 
 model Researcher {
   id             String   @id @default(uuid())
+  slug           String   @unique
   authorId       String?  @unique @map("author_id")
   author         Author?  @relation(fields: [authorId], references: [id], onDelete: Restrict)
   // Transitional: remove after every legacy row has been linked through authorId.

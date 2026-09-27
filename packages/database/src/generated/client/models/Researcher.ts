@@ -38,6 +38,7 @@ export type ResearcherSumAggregateOutputType = {
 
 export type ResearcherMinAggregateOutputType = {
   id: string | null
+  slug: string | null
   authorId: string | null
   openalexId: string | null
   name: string | null
@@ -55,6 +56,7 @@ export type ResearcherMinAggregateOutputType = {
 
 export type ResearcherMaxAggregateOutputType = {
   id: string | null
+  slug: string | null
   authorId: string | null
   openalexId: string | null
   name: string | null
@@ -72,6 +74,7 @@ export type ResearcherMaxAggregateOutputType = {
 
 export type ResearcherCountAggregateOutputType = {
   id: number
+  slug: number
   authorId: number
   openalexId: number
   name: number
@@ -101,6 +104,7 @@ export type ResearcherSumAggregateInputType = {
 
 export type ResearcherMinAggregateInputType = {
   id?: true
+  slug?: true
   authorId?: true
   openalexId?: true
   name?: true
@@ -118,6 +122,7 @@ export type ResearcherMinAggregateInputType = {
 
 export type ResearcherMaxAggregateInputType = {
   id?: true
+  slug?: true
   authorId?: true
   openalexId?: true
   name?: true
@@ -135,6 +140,7 @@ export type ResearcherMaxAggregateInputType = {
 
 export type ResearcherCountAggregateInputType = {
   id?: true
+  slug?: true
   authorId?: true
   openalexId?: true
   name?: true
@@ -239,6 +245,7 @@ export type ResearcherGroupByArgs<ExtArgs extends runtime.Types.Extensions.Inter
 
 export type ResearcherGroupByOutputType = {
   id: string
+  slug: string
   authorId: string | null
   openalexId: string | null
   name: string
@@ -279,6 +286,7 @@ export type ResearcherWhereInput = {
   OR?: Prisma.ResearcherWhereInput[]
   NOT?: Prisma.ResearcherWhereInput | Prisma.ResearcherWhereInput[]
   id?: Prisma.StringFilter<"Researcher"> | string
+  slug?: Prisma.StringFilter<"Researcher"> | string
   authorId?: Prisma.StringNullableFilter<"Researcher"> | string | null
   openalexId?: Prisma.StringNullableFilter<"Researcher"> | string | null
   name?: Prisma.StringFilter<"Researcher"> | string
@@ -298,6 +306,7 @@ export type ResearcherWhereInput = {
 
 export type ResearcherOrderByWithRelationInput = {
   id?: Prisma.SortOrder
+  slug?: Prisma.SortOrder
   authorId?: Prisma.SortOrderInput | Prisma.SortOrder
   openalexId?: Prisma.SortOrderInput | Prisma.SortOrder
   name?: Prisma.SortOrder
@@ -318,6 +327,7 @@ export type ResearcherOrderByWithRelationInput = {
 
 export type ResearcherWhereUniqueInput = Prisma.AtLeast<{
   id?: string
+  slug?: string
   authorId?: string
   openalexId?: string
   email?: string
@@ -336,10 +346,11 @@ export type ResearcherWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"Researcher"> | Date | string
   author?: Prisma.XOR<Prisma.AuthorNullableScalarRelationFilter, Prisma.AuthorWhereInput> | null
   keywords?: Prisma.ResearcherKeywordListRelationFilter
-}, "id" | "authorId" | "openalexId" | "email">
+}, "id" | "slug" | "authorId" | "openalexId" | "email">
 
 export type ResearcherOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
+  slug?: Prisma.SortOrder
   authorId?: Prisma.SortOrderInput | Prisma.SortOrder
   openalexId?: Prisma.SortOrderInput | Prisma.SortOrder
   name?: Prisma.SortOrder
@@ -365,6 +376,7 @@ export type ResearcherScalarWhereWithAggregatesInput = {
   OR?: Prisma.ResearcherScalarWhereWithAggregatesInput[]
   NOT?: Prisma.ResearcherScalarWhereWithAggregatesInput | Prisma.ResearcherScalarWhereWithAggregatesInput[]
   id?: Prisma.StringWithAggregatesFilter<"Researcher"> | string
+  slug?: Prisma.StringWithAggregatesFilter<"Researcher"> | string
   authorId?: Prisma.StringNullableWithAggregatesFilter<"Researcher"> | string | null
   openalexId?: Prisma.StringNullableWithAggregatesFilter<"Researcher"> | string | null
   name?: Prisma.StringWithAggregatesFilter<"Researcher"> | string
@@ -382,6 +394,7 @@ export type ResearcherScalarWhereWithAggregatesInput = {
 
 export type ResearcherCreateInput = {
   id?: string
+  slug: string
   openalexId?: string | null
   name: string
   email?: string | null
@@ -400,6 +413,7 @@ export type ResearcherCreateInput = {
 
 export type ResearcherUncheckedCreateInput = {
   id?: string
+  slug: string
   authorId?: string | null
   openalexId?: string | null
   name: string
@@ -418,6 +432,7 @@ export type ResearcherUncheckedCreateInput = {
 
 export type ResearcherUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  slug?: Prisma.StringFieldUpdateOperationsInput | string
   openalexId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   name?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -436,6 +451,7 @@ export type ResearcherUpdateInput = {
 
 export type ResearcherUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  slug?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   openalexId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   name?: Prisma.StringFieldUpdateOperationsInput | string
@@ -454,6 +470,7 @@ export type ResearcherUncheckedUpdateInput = {
 
 export type ResearcherCreateManyInput = {
   id?: string
+  slug: string
   authorId?: string | null
   openalexId?: string | null
   name: string
@@ -471,6 +488,7 @@ export type ResearcherCreateManyInput = {
 
 export type ResearcherUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  slug?: Prisma.StringFieldUpdateOperationsInput | string
   openalexId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   name?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -487,6 +505,7 @@ export type ResearcherUpdateManyMutationInput = {
 
 export type ResearcherUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  slug?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   openalexId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   name?: Prisma.StringFieldUpdateOperationsInput | string
@@ -515,6 +534,7 @@ export type ResearcherOrderByRelevanceInput = {
 
 export type ResearcherCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  slug?: Prisma.SortOrder
   authorId?: Prisma.SortOrder
   openalexId?: Prisma.SortOrder
   name?: Prisma.SortOrder
@@ -537,6 +557,7 @@ export type ResearcherAvgOrderByAggregateInput = {
 
 export type ResearcherMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  slug?: Prisma.SortOrder
   authorId?: Prisma.SortOrder
   openalexId?: Prisma.SortOrder
   name?: Prisma.SortOrder
@@ -554,6 +575,7 @@ export type ResearcherMaxOrderByAggregateInput = {
 
 export type ResearcherMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  slug?: Prisma.SortOrder
   authorId?: Prisma.SortOrder
   openalexId?: Prisma.SortOrder
   name?: Prisma.SortOrder
@@ -627,6 +649,7 @@ export type ResearcherUpdateOneRequiredWithoutKeywordsNestedInput = {
 
 export type ResearcherCreateWithoutAuthorInput = {
   id?: string
+  slug: string
   openalexId?: string | null
   name: string
   email?: string | null
@@ -644,6 +667,7 @@ export type ResearcherCreateWithoutAuthorInput = {
 
 export type ResearcherUncheckedCreateWithoutAuthorInput = {
   id?: string
+  slug: string
   openalexId?: string | null
   name: string
   email?: string | null
@@ -677,6 +701,7 @@ export type ResearcherUpdateToOneWithWhereWithoutAuthorInput = {
 
 export type ResearcherUpdateWithoutAuthorInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  slug?: Prisma.StringFieldUpdateOperationsInput | string
   openalexId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   name?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -694,6 +719,7 @@ export type ResearcherUpdateWithoutAuthorInput = {
 
 export type ResearcherUncheckedUpdateWithoutAuthorInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  slug?: Prisma.StringFieldUpdateOperationsInput | string
   openalexId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   name?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -711,6 +737,7 @@ export type ResearcherUncheckedUpdateWithoutAuthorInput = {
 
 export type ResearcherCreateWithoutKeywordsInput = {
   id?: string
+  slug: string
   openalexId?: string | null
   name: string
   email?: string | null
@@ -728,6 +755,7 @@ export type ResearcherCreateWithoutKeywordsInput = {
 
 export type ResearcherUncheckedCreateWithoutKeywordsInput = {
   id?: string
+  slug: string
   authorId?: string | null
   openalexId?: string | null
   name: string
@@ -761,6 +789,7 @@ export type ResearcherUpdateToOneWithWhereWithoutKeywordsInput = {
 
 export type ResearcherUpdateWithoutKeywordsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  slug?: Prisma.StringFieldUpdateOperationsInput | string
   openalexId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   name?: Prisma.StringFieldUpdateOperationsInput | string
   email?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -778,6 +807,7 @@ export type ResearcherUpdateWithoutKeywordsInput = {
 
 export type ResearcherUncheckedUpdateWithoutKeywordsInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  slug?: Prisma.StringFieldUpdateOperationsInput | string
   authorId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   openalexId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   name?: Prisma.StringFieldUpdateOperationsInput | string
@@ -826,6 +856,7 @@ export type ResearcherCountOutputTypeCountKeywordsArgs<ExtArgs extends runtime.T
 
 export type ResearcherSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
+  slug?: boolean
   authorId?: boolean
   openalexId?: boolean
   name?: boolean
@@ -848,6 +879,7 @@ export type ResearcherSelect<ExtArgs extends runtime.Types.Extensions.InternalAr
 
 export type ResearcherSelectScalar = {
   id?: boolean
+  slug?: boolean
   authorId?: boolean
   openalexId?: boolean
   name?: boolean
@@ -863,7 +895,7 @@ export type ResearcherSelectScalar = {
   updatedAt?: boolean
 }
 
-export type ResearcherOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "authorId" | "openalexId" | "name" | "email" | "department" | "title" | "bio" | "profileUrl" | "photoUrl" | "worksCount" | "citedByCount" | "createdAt" | "updatedAt", ExtArgs["result"]["researcher"]>
+export type ResearcherOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "slug" | "authorId" | "openalexId" | "name" | "email" | "department" | "title" | "bio" | "profileUrl" | "photoUrl" | "worksCount" | "citedByCount" | "createdAt" | "updatedAt", ExtArgs["result"]["researcher"]>
 export type ResearcherInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   author?: boolean | Prisma.Researcher$authorArgs<ExtArgs>
   keywords?: boolean | Prisma.Researcher$keywordsArgs<ExtArgs>
@@ -878,6 +910,7 @@ export type $ResearcherPayload<ExtArgs extends runtime.Types.Extensions.Internal
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
+    slug: string
     authorId: string | null
     openalexId: string | null
     name: string
@@ -1263,6 +1296,7 @@ export interface Prisma__ResearcherClient<T, Null = never, ExtArgs extends runti
  */
 export interface ResearcherFieldRefs {
   readonly id: Prisma.FieldRef<"Researcher", 'String'>
+  readonly slug: Prisma.FieldRef<"Researcher", 'String'>
   readonly authorId: Prisma.FieldRef<"Researcher", 'String'>
   readonly openalexId: Prisma.FieldRef<"Researcher", 'String'>
   readonly name: Prisma.FieldRef<"Researcher", 'String'>

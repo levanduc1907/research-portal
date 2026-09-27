@@ -46,7 +46,7 @@ export class ResearchersController {
 
   @Get(":id/papers")
   @ApiOperation({
-    summary: "List papers linked to a researcher or OpenAlex author",
+    summary: "List papers linked to a researcher slug or legacy identifier",
   })
   @ApiQuery({ name: "page", required: false, type: Number })
   @ApiQuery({ name: "limit", required: false, type: Number })
@@ -59,7 +59,7 @@ export class ResearchersController {
 
   @Get(":id")
   @ApiOperation({
-    summary: "Get researcher profile by researcher, author, or OpenAlex ID",
+    summary: "Get researcher profile by slug or legacy identifier",
   })
   async findById(@Param() params: ResourceIdParam): Promise<ResearcherDto> {
     return this.researchersService.findById(params.id);

@@ -2,7 +2,9 @@ import "dotenv/config";
 import { PrismaMariaDb } from "@prisma/adapter-mariadb";
 import { PrismaClient } from "./generated/client/client";
 
-export function createPrismaAdapter(connectionString = process.env.DATABASE_URL) {
+export function createPrismaAdapter(
+  connectionString = process.env.DATABASE_URL,
+) {
   if (!connectionString) {
     throw new Error("DATABASE_URL environment variable is not defined");
   }
@@ -29,3 +31,4 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 export * from "./generated/client/client";
+export * from "./researcher-slug";

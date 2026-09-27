@@ -125,7 +125,7 @@ export function ResearcherDirectory(): React.JSX.Element {
               <Link
                 className="researcher-card"
                 key={r.id}
-                href={`/researchers/${encodeURIComponent(r.id)}`}
+                href={`/researchers/${encodeURIComponent(r.slug)}`}
               >
                 <div className="card-top">
                   <ResearcherAvatar researcher={r} />

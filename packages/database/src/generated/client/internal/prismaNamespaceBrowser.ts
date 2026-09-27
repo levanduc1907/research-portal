@@ -180,6 +180,7 @@ export type PaperTopicScalarFieldEnum = (typeof PaperTopicScalarFieldEnum)[keyof
 
 export const ResearcherScalarFieldEnum = {
   id: 'id',
+  slug: 'slug',
   authorId: 'authorId',
   openalexId: 'openalexId',
   name: 'name',
@@ -394,6 +395,7 @@ export type PaperTopicOrderByRelevanceFieldEnum = (typeof PaperTopicOrderByRelev
 
 export const ResearcherOrderByRelevanceFieldEnum = {
   id: 'id',
+  slug: 'slug',
   authorId: 'authorId',
   openalexId: 'openalexId',
   name: 'name',

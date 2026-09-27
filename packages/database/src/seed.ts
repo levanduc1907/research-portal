@@ -1,4 +1,4 @@
-import { prisma } from "./index";
+import { prisma, slugifyResearcherName } from "./index";
 
 async function main() {
   console.log("🌱 Seeding UIUC Research Portal database...");
@@ -226,6 +226,7 @@ async function main() {
   for (const r of researchersData) {
     const researcher = await prisma.researcher.create({
       data: {
+        slug: slugifyResearcherName(r.name.replace(/^Dr\.\s*/, "")),
         name: r.name,
         email: r.email,
         department: r.department,

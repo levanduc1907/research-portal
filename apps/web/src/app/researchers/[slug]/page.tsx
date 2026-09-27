@@ -2,6 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowUpRight, BookOpen, Quote } from "lucide-react";
 import type { ResearcherDto } from "@repo/contracts";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
@@ -15,36 +16,43 @@ import { DEFAULT_RESEARCHERS_RESULT } from "../../../lib/sample-researchers";
 export default function ResearcherPage({
   params,
 }: {
-  params: Promise<{ id: string }>;
+  params: Promise<{ slug: string }>;
 }): React.JSX.Element {
-  const { id } = use(params);
+  const { slug } = use(params);
+  const router = useRouter();
   const [paperPage, setPaperPage] = useState(1);
   const [showAllTopics, setShowAllTopics] = useState(false);
 
   useEffect(() => {
     setPaperPage(1);
     setShowAllTopics(false);
-  }, [id]);
+  }, [slug]);
 
   const sampleResearcher =
     DEFAULT_RESEARCHERS_RESULT.data.find(
-      (researcher) => researcher.id === id,
+      (researcher) => researcher.slug === slug || researcher.id === slug,
     ) ?? null;
   const researcherQuery = useQuery({
-    queryKey: ["researcher", id],
-    queryFn: () => researchApi.getResearcher(id),
+    queryKey: ["researcher", slug],
+    queryFn: () => researchApi.getResearcher(slug),
     retry: false,
   });
   const papersQuery = useQuery({
-    queryKey: ["researcher-papers", id, paperPage],
+    queryKey: ["researcher-papers", slug, paperPage],
     queryFn: () =>
-      researchApi.getResearcherPapers(id, { page: paperPage, limit: 8 }),
+      researchApi.getResearcherPapers(slug, { page: paperPage, limit: 8 }),
     placeholderData: keepPreviousData,
     retry: false,
   });
 
   const researcher: ResearcherDto | null =
     researcherQuery.data ?? sampleResearcher;
+
+  useEffect(() => {
+    if (researcher?.slug && researcher.slug !== slug) {
+      router.replace(`/researchers/${encodeURIComponent(researcher.slug)}`);
+    }
+  }, [slug, researcher?.slug, router]);
   const isSample = researcherQuery.isError && Boolean(sampleResearcher);
   const papers = papersQuery.data;
   const portalPaperCount = papers?.meta.total;

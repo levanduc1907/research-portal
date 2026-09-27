@@ -4,6 +4,7 @@ export const DEFAULT_RESEARCHERS_RESULT: PaginatedResult<ResearcherDto> = {
   data: [
     {
       id: "r-1",
+      slug: "jiawei-han",
       name: "Dr. Jiawei Han",
       email: "hanj@illinois.edu",
       department: "Computer Science",
@@ -24,6 +25,7 @@ export const DEFAULT_RESEARCHERS_RESULT: PaginatedResult<ResearcherDto> = {
     },
     {
       id: "r-2",
+      slug: "sarita-adve",
       name: "Dr. Sarita Adve",
       email: "sadve@illinois.edu",
       department: "Computer Science",
@@ -43,6 +45,7 @@ export const DEFAULT_RESEARCHERS_RESULT: PaginatedResult<ResearcherDto> = {
     },
     {
       id: "r-3",
+      slug: "marc-snir",
       name: "Dr. Marc Snir",
       email: "snir@illinois.edu",
       department: "Computer Science",
@@ -62,6 +65,7 @@ export const DEFAULT_RESEARCHERS_RESULT: PaginatedResult<ResearcherDto> = {
     },
     {
       id: "r-4",
+      slug: "nancy-m-amato",
       name: "Dr. Nancy M. Amato",
       email: "namato@illinois.edu",
       department: "Computer Science",
@@ -81,6 +85,7 @@ export const DEFAULT_RESEARCHERS_RESULT: PaginatedResult<ResearcherDto> = {
     },
     {
       id: "r-5",
+      slug: "stephen-long",
       name: "Dr. Stephen Long",
       email: "slong@illinois.edu",
       department: "Crop Sciences & Plant Biology",
