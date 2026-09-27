@@ -1357,7 +1357,11 @@ export class OpenAlexImportService {
       try {
         raw = await this.client.getAuthor(knownOpenAlexId);
         const storedScore = this.authorNameScore(researcher.name, raw);
-        if (storedScore < 98) {
+        // A previously linked author with a strong name match is already a
+        // trusted identity. Re-running paid Author Search for every harmless
+        // middle-name or initial variation burns the daily OpenAlex budget
+        // without improving the link. Only repair genuinely weak matches.
+        if (storedScore < 80) {
           const searched = await this.searchOpenAlexAuthor(
             researcher.name,
             researcher.email,
@@ -1371,7 +1375,7 @@ export class OpenAlexImportService {
               `Replaced stored OpenAlex author ${raw.id} for ${researcher.name} with higher-confidence ${searched.id}`,
             );
             raw = searched;
-          } else if (storedScore < 80) {
+          } else {
             raw = searched;
           }
         }
