@@ -27,6 +27,17 @@ type ResearcherWorkCheckpoint = {
   worksCursor: string;
 };
 
+type ResearcherIdentity = {
+  id: string;
+  name: string;
+  email: string | null;
+  openalexId: string | null;
+  profileUrl: string | null;
+  department?: string | null;
+  keywords?: Array<{ keyword: string }>;
+  author: { openalexId: string } | null;
+};
+
 @Injectable()
 export class OpenAlexImportService {
   private readonly logger = new Logger(OpenAlexImportService.name);
@@ -167,16 +178,92 @@ export class OpenAlexImportService {
         add(words.filter((_, wordIndex) => wordIndex !== index).join(" "));
       }
       add(`${words[0]} ${words.at(-1)}`);
+
+      // Some directory records contain a legal first name while publications
+      // use a preferred middle name (Mark Daniel -> Dan).
+      for (const middleName of words.slice(1, -1)) {
+        add(`${middleName} ${words.at(-1)}`);
+        for (const alias of this.givenNameAliases(middleName)) {
+          add(`${alias} ${words.at(-1)}`);
+        }
+      }
+    }
+
+    const firstName = words[0];
+    const familyName = words.at(-1);
+    if (firstName && familyName) {
+      for (const alias of this.givenNameAliases(firstName)) {
+        add(`${alias} ${familyName}`);
+      }
+      if (/^de[a-z]{4,}$/i.test(familyName)) {
+        add(`${firstName} de ${familyName.slice(2)}`);
+        add(`${firstName} ${familyName.slice(2)}`);
+      }
+
+      // This is intentionally last. A surname-only OpenAlex query is broad,
+      // but the candidate still has to pass name, e-mail and research-context
+      // checks before it can be linked.
+      add(familyName);
     }
 
     add(this.normalizePersonName(original));
-    return variants.slice(0, 12);
+    return variants.slice(0, 20);
   }
 
   private compatibleNameToken(left: string, right: string): boolean {
     return (
       left === right ||
       (left[0] === right[0] && (left.length === 1 || right.length === 1))
+    );
+  }
+
+  private givenNameAliases(value: string): Set<string> {
+    const groups = [
+      ["alex", "alexander", "alexandra"],
+      ["becky", "rebecca"],
+      ["bob", "robert"],
+      ["chris", "christopher", "christine", "christina"],
+      ["cindy", "cynthia"],
+      ["dan", "daniel"],
+      ["jaki", "jacquelyn", "jackie", "jacqueline"],
+      ["jeff", "jeffrey", "jefferson"],
+      ["joe", "joseph"],
+      ["kate", "kathleen", "katherine", "kathryn"],
+      ["laurie", "lauretta"],
+      ["matt", "matthew"],
+      ["pat", "patricia"],
+      ["trish", "patricia"],
+      ["ted", "theodore", "edward", "william"],
+    ];
+    const normalized = this.normalizePersonName(value);
+    const group = groups.find((items) => items.includes(normalized));
+    return new Set(group || [normalized]);
+  }
+
+  private compatibleGivenName(left: string, right: string): boolean {
+    if (this.compatibleNameToken(left, right)) return true;
+    const leftAliases = this.givenNameAliases(left);
+    const rightAliases = this.givenNameAliases(right);
+    return [...leftAliases].some((value) => rightAliases.has(value));
+  }
+
+  private compatibleFamilyName(left: string[], right: string[]): boolean {
+    const leftLast = left.at(-1) || "";
+    const rightLast = right.at(-1) || "";
+    if (leftLast === rightLast) return true;
+
+    const leftFamily = left.slice(1);
+    const rightFamily = right.slice(1);
+    const leftCompact = leftFamily.join("");
+    const rightCompact = rightFamily.join("");
+    if (leftCompact && leftCompact === rightCompact) return true;
+
+    // OpenAlex may retain or omit a compound/maiden family name, for example
+    // Nickols vs Nickols-Richardson or Chamorro Chavez vs Chamorro.
+    return (
+      leftLast.length >= 4 &&
+      rightLast.length >= 4 &&
+      (rightFamily.includes(leftLast) || leftFamily.includes(rightLast))
     );
   }
 
@@ -219,13 +306,16 @@ export class OpenAlexImportService {
     const candidateFirst = candidateTokens[0] || "";
     const expectedLast = expectedTokens.at(-1) || "";
     const candidateLast = candidateTokens.at(-1) || "";
-    if (expectedLast !== candidateLast) return 0;
+    if (!this.compatibleFamilyName(expectedTokens, candidateTokens)) return 0;
     const firstNameExact = expectedFirst === candidateFirst;
-    const firstNameCompatible = this.compatibleNameToken(
+    const firstNameCompatible = this.compatibleGivenName(
       expectedFirst,
       candidateFirst,
     );
-    if (!firstNameCompatible) return 0;
+    const preferredMiddleName = expectedTokens
+      .slice(1, -1)
+      .some((token) => this.compatibleGivenName(token, candidateFirst));
+    if (!firstNameCompatible && !preferredMiddleName) return 0;
 
     const expectedMiddle = expectedTokens.slice(1, -1);
     const candidateMiddle = candidateTokens.slice(1, -1);
@@ -241,8 +331,42 @@ export class OpenAlexImportService {
       return 0;
     }
 
-    const base = firstNameExact ? 88 : 80;
+    const base = firstNameExact ? 88 : firstNameCompatible ? 80 : 76;
     return Math.min(97, base + Math.min(9, middleMatches * 4));
+  }
+
+  private researchContextScore(
+    researcher: Pick<ResearcherIdentity, "department" | "keywords">,
+    candidate: OpenAlexAuthorEntityRaw,
+  ): number {
+    const sourcePhrases = [
+      researcher.department,
+      ...(researcher.keywords || []).map(({ keyword }) => keyword),
+    ]
+      .filter((value): value is string => Boolean(value))
+      .map((value) => this.normalizePersonName(value))
+      .filter(Boolean);
+    if (!sourcePhrases.length) return 0;
+
+    const sourceSet = new Set(sourcePhrases);
+    const sourceTokens = new Set(
+      sourcePhrases.flatMap((phrase) =>
+        phrase
+          .split(" ")
+          .filter((token) => token.length >= 4),
+      ),
+    );
+    let exactMatches = 0;
+    let tokenMatches = 0;
+    for (const topic of candidate.topics || []) {
+      const phrase = this.normalizePersonName(topic.display_name || "");
+      if (!phrase) continue;
+      if (sourceSet.has(phrase)) exactMatches++;
+      tokenMatches += phrase
+        .split(" ")
+        .filter((token) => token.length >= 4 && sourceTokens.has(token)).length;
+    }
+    return Math.min(30, exactMatches * 10 + Math.min(15, tokenMatches * 2));
   }
 
   private authorNameScore(
@@ -353,8 +477,10 @@ export class OpenAlexImportService {
   }
 
   private pickOpenAlexAuthor(
-    expectedName: string,
-    email: string | null,
+    researcher: Pick<
+      ResearcherIdentity,
+      "name" | "email" | "department" | "keywords"
+    >,
     candidates: OpenAlexAuthorEntityRaw[],
     requireEmailSignal = false,
   ): OpenAlexAuthorEntityRaw | null {
@@ -364,25 +490,38 @@ export class OpenAlexImportService {
           candidate.display_name,
           ...(candidate.display_name_alternatives || []),
         ].filter((value): value is string => Boolean(value));
-        const nameScore = this.authorNameScore(expectedName, candidate);
+        const nameScore = this.authorNameScore(researcher.name, candidate);
+        const primaryNameScore = candidate.display_name
+          ? this.personNameScore(researcher.name, candidate.display_name)
+          : 0;
         const emailScore = Math.max(
           0,
           ...candidateNames.map((value) =>
-            this.emailIdentityScore(email, value),
+            this.emailIdentityScore(researcher.email, value),
           ),
         );
+        const contextScore = this.researchContextScore(researcher, candidate);
         return {
           candidate,
           nameScore,
+          primaryNameScore,
           emailScore,
-          score: nameScore + emailScore,
+          contextScore,
+          score: nameScore + emailScore + contextScore,
         };
       })
       .filter(
-        ({ nameScore, emailScore, score }) =>
+        ({ nameScore, primaryNameScore, emailScore, contextScore, score }) =>
           nameScore >= 75 &&
           score >= 85 &&
-          (!requireEmailSignal || emailScore >= 12),
+          // OpenAlex alternatives occasionally contain a different person
+          // after an author merge. Do not trust an alternative-name match
+          // when the primary name conflicts unless independent identity
+          // signals also agree.
+          (primaryNameScore >= 75 ||
+            emailScore >= 12 ||
+            contextScore >= 12) &&
+          (!requireEmailSignal || emailScore >= 12 || contextScore >= 12),
       )
       .sort(
         (left, right) =>
@@ -392,16 +531,27 @@ export class OpenAlexImportService {
       );
 
     if (!ranked.length) return null;
-    if (ranked.length > 1 && ranked[0].score === ranked[1].score) return null;
+    const topWorks = ranked[0].candidate.works_count || 0;
+    const secondWorks = ranked[1]?.candidate.works_count || 0;
+    if (
+      ranked.length > 1 &&
+      ranked[0].score - ranked[1].score < 5 &&
+      ranked[0].candidate.id !== ranked[1].candidate.id &&
+      topWorks < secondWorks * 2 + 20
+    ) {
+      return null;
+    }
     return ranked[0].candidate;
   }
 
   private async searchOpenAlexAuthor(
-    name: string,
-    email: string | null,
+    researcher: Pick<
+      ResearcherIdentity,
+      "name" | "email" | "department" | "keywords"
+    >,
     institutionId: string,
   ): Promise<OpenAlexAuthorEntityRaw | null> {
-    const nameVariants = this.buildNameSearchVariants(name);
+    const nameVariants = this.buildNameSearchVariants(researcher.name);
     for (const search of nameVariants) {
       const institutionMatches = await this.client.getAuthors({
         institutionId,
@@ -409,21 +559,20 @@ export class OpenAlexImportService {
         perPage: 25,
       });
       const institutionCandidate = this.pickOpenAlexAuthor(
-        name,
-        email,
+        researcher,
         institutionMatches.results,
       );
       if (institutionCandidate) {
-        if (search !== name) {
+        if (search !== researcher.name) {
           this.logger.log(
-            `Resolved ${name} with OpenAlex name variant "${search}" (${institutionCandidate.display_name || institutionCandidate.id})`,
+            `Resolved ${researcher.name} with OpenAlex name variant "${search}" (${institutionCandidate.display_name || institutionCandidate.id})`,
           );
         }
         return institutionCandidate;
       }
     }
 
-    const emailLocalPart = email
+    const emailLocalPart = researcher.email
       ?.split("@")[0]
       ?.replace(/[._-]+/g, " ")
       .trim();
@@ -434,16 +583,14 @@ export class OpenAlexImportService {
         perPage: 25,
       });
       const emailCandidate = this.pickOpenAlexAuthor(
-        name,
-        email,
+        researcher,
         emailMatches.results,
       );
       if (emailCandidate) return emailCandidate;
     }
 
     const fromAffiliatedWorks = await this.searchAuthorFromAffiliatedWorks(
-      name,
-      email,
+      researcher,
       institutionId,
       nameVariants,
     );
@@ -452,7 +599,7 @@ export class OpenAlexImportService {
     // Some former UIUC researchers no longer have UIUC in their current
     // affiliation search index. A global fallback is accepted only when the
     // email local-part independently agrees with the candidate name.
-    if (email) {
+    if (researcher.email) {
       for (const search of nameVariants) {
         const globalMatches = await this.client.getAuthors({
           institutionId: null,
@@ -460,8 +607,7 @@ export class OpenAlexImportService {
           perPage: 25,
         });
         const candidate = this.pickOpenAlexAuthor(
-          name,
-          email,
+          researcher,
           globalMatches.results,
           true,
         );
@@ -473,10 +619,12 @@ export class OpenAlexImportService {
   }
 
   private async searchAuthorFromAffiliatedWorks(
-    name: string,
-    email: string | null,
+    researcher: Pick<
+      ResearcherIdentity,
+      "name" | "email" | "department" | "keywords"
+    >,
     institutionId: string,
-    nameVariants: string[] = this.buildNameSearchVariants(name),
+    nameVariants: string[] = this.buildNameSearchVariants(researcher.name),
   ): Promise<OpenAlexAuthorEntityRaw | null> {
     const cleanInstitutionId = institutionId.replace(
       "https://openalex.org/",
@@ -502,9 +650,13 @@ export class OpenAlexImportService {
           if (!isUiucAuthorship || !authorship.author?.id) continue;
           const candidateName =
             authorship.raw_author_name || authorship.author.display_name;
-          const nameScore = this.personNameScore(name, candidateName);
+          const nameScore = this.personNameScore(
+            researcher.name,
+            candidateName,
+          );
           const score =
-            nameScore + this.emailIdentityScore(email, candidateName);
+            nameScore +
+            this.emailIdentityScore(researcher.email, candidateName);
           if (nameScore < 80 || score < 85) continue;
 
           const current = candidates.get(authorship.author.id);
@@ -525,17 +677,21 @@ export class OpenAlexImportService {
         right.workIds.size - left.workIds.size || right.score - left.score,
     );
     if (!ranked.length) return null;
-    if (
-      ranked.length > 1 &&
-      ranked[0].workIds.size === ranked[1].workIds.size &&
-      ranked[0].score === ranked[1].score
-    ) {
-      return null;
-    }
-    this.logger.log(
-      `Resolved ${name} through ${ranked[0].workIds.size} UIUC-affiliated work bylines (${ranked[0].displayName})`,
+    const hydratedCandidates = await Promise.all(
+      ranked
+        .slice(0, 8)
+        .map((candidate) => this.client.getAuthor(candidate.id)),
     );
-    return this.client.getAuthor(ranked[0].id);
+    const selected = this.pickOpenAlexAuthor(
+      researcher,
+      hydratedCandidates,
+    );
+    if (!selected) return null;
+    const selectedEvidence = candidates.get(selected.id);
+    this.logger.log(
+      `Resolved ${researcher.name} through ${selectedEvidence?.workIds.size || 0} UIUC-affiliated work bylines (${selected.display_name || selected.id})`,
+    );
+    return selected;
   }
 
   private async upsertOpenAlexAuthor(
@@ -561,8 +717,7 @@ export class OpenAlexImportService {
       return this.client.getAuthor(openalexId);
     }
     const candidate = await this.searchOpenAlexAuthor(
-      name,
-      email,
+      { name, email, department: null, keywords: [] },
       institutionId,
     );
     if (!candidate) {
@@ -1146,6 +1301,8 @@ export class OpenAlexImportService {
         email: true,
         openalexId: true,
         profileUrl: true,
+        department: true,
+        keywords: { select: { keyword: true } },
         author: { select: { openalexId: true } },
       },
     });
@@ -1307,6 +1464,101 @@ export class OpenAlexImportService {
     }
   }
 
+  async syncResearcherMetrics(): Promise<
+    ImportResult & { changed: number; failed: number }
+  > {
+    const researchers = await this.prisma.researcher.findMany({
+      where: { authorId: { not: null } },
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        name: true,
+        openalexId: true,
+        worksCount: true,
+        citedByCount: true,
+        author: { select: { openalexId: true } },
+      },
+    });
+    let totalImported = 0;
+    let changed = 0;
+    let failed = 0;
+    const failures: string[] = [];
+    const concurrency = 5;
+
+    for (let index = 0; index < researchers.length; index += concurrency) {
+      const batch = researchers.slice(index, index + concurrency);
+      const results = await Promise.allSettled(
+        batch.map(async (researcher) => {
+          const openalexId =
+            researcher.author?.openalexId || researcher.openalexId;
+          if (!openalexId) {
+            throw new Error("Linked author has no OpenAlex ID");
+          }
+
+          // Author singleton is the canonical citation source. The works list
+          // meta.count is used for works because author search/singleton counts
+          // can lag after OpenAlex merges.
+          const [author, works] = await Promise.all([
+            this.client.getAuthor(openalexId),
+            this.client.getWorks({
+              authorId: openalexId,
+              institutionId: null,
+              perPage: 1,
+            }),
+          ]);
+          const worksCount = works.meta.count;
+          const citedByCount = author.cited_by_count || 0;
+          const isChanged =
+            researcher.openalexId !== author.id ||
+            researcher.worksCount !== worksCount ||
+            researcher.citedByCount !== citedByCount;
+          if (isChanged) {
+            await this.prisma.researcher.update({
+              where: { id: researcher.id },
+              data: {
+                openalexId: author.id,
+                worksCount,
+                citedByCount,
+              },
+            });
+          }
+          return isChanged;
+        }),
+      );
+
+      results.forEach((result, resultIndex) => {
+        if (result.status === "fulfilled") {
+          totalImported++;
+          if (result.value) changed++;
+        } else {
+          failed++;
+          failures.push(
+            `${batch[resultIndex].name}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+          );
+        }
+      });
+
+      if ((index + batch.length) % 100 === 0) {
+        this.logger.log(
+          `Researcher metrics: ${index + batch.length}/${researchers.length} checked, ${changed} corrected, ${failed} failed`,
+        );
+      }
+    }
+
+    if (failures.length) {
+      this.logger.error(
+        `Researcher metrics completed with ${failed} failure(s): ${failures.slice(0, 10).join(" | ")}`,
+      );
+    }
+    return {
+      totalFetched: researchers.length,
+      totalImported,
+      changed,
+      failed,
+      status: failed ? "FAILED" : "COMPLETED",
+    };
+  }
+
   private parseResearcherWorkCheckpoint(
     value: string | null,
   ): ResearcherWorkCheckpoint {
@@ -1337,14 +1589,9 @@ export class OpenAlexImportService {
     }
   }
 
-  private async resolveAndLinkResearcherAuthor(researcher: {
-    id: string;
-    name: string;
-    email: string | null;
-    openalexId: string | null;
-    profileUrl: string | null;
-    author: { openalexId: string } | null;
-  }): Promise<OpenAlexAuthorEntityRaw | null> {
+  private async resolveAndLinkResearcherAuthor(
+    researcher: ResearcherIdentity,
+  ): Promise<OpenAlexAuthorEntityRaw | null> {
     const institutionId =
       this.config.get<string>("UIUC_OPENALEX_INSTITUTION_ID") ||
       process.env.UIUC_OPENALEX_INSTITUTION_ID ||
@@ -1366,8 +1613,7 @@ export class OpenAlexImportService {
         // match or a suspiciously small OpenAlex author fragment.
         if (storedScore < 80 || mayBeFragmentedAuthor) {
           const searched = await this.searchOpenAlexAuthor(
-            researcher.name,
-            researcher.email,
+            researcher,
             institutionId,
           );
           const searchedScore = searched
@@ -1397,11 +1643,7 @@ export class OpenAlexImportService {
         );
       }
     }
-    raw ||= await this.searchOpenAlexAuthor(
-      researcher.name,
-      researcher.email,
-      institutionId,
-    );
+    raw ||= await this.searchOpenAlexAuthor(researcher, institutionId);
     if (!raw) return null;
 
     const normalizedKnownOpenAlexId = knownOpenAlexId?.replace(
@@ -1488,6 +1730,8 @@ export class OpenAlexImportService {
         email: true,
         openalexId: true,
         profileUrl: true,
+        department: true,
+        keywords: { select: { keyword: true } },
         author: { select: { openalexId: true } },
       },
     });

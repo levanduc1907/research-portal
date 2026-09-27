@@ -17,6 +17,7 @@ async function bootstrap() {
     command === "import-faculty-csv" ||
     command === "import-phase2" ||
     command === "link-researcher-authors" ||
+    command === "sync-researcher-metrics" ||
     command === "backfill-researcher-papers" ||
     command === "backfill-researcher-departments" ||
     command === "sync-vectors"
@@ -51,6 +52,13 @@ async function bootstrap() {
     }
     if (command === "link-researcher-authors") {
       const result = await importer.linkExistingResearchersToAuthors();
+      failed ||= result.status === "FAILED";
+    }
+    if (command === "sync-researcher-metrics") {
+      const result = await importer.syncResearcherMetrics();
+      logger.log(
+        `Researcher metrics finished: ${result.totalImported}/${result.totalFetched} checked, ${result.changed} corrected, ${result.failed} failed`,
+      );
       failed ||= result.status === "FAILED";
     }
     if (command === "backfill-researcher-papers") {
