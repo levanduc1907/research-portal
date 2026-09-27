@@ -249,7 +249,7 @@ export class OpenAlexImportService {
 
   private givenNameAliases(value: string): Set<string> {
     const groups = [
-      ["alex", "alexander", "alexandra"],
+      ["alex", "alexander", "aleksandr", "alexandra", "alexandre", "alexandru"],
       ["becky", "rebecca"],
       ["bob", "robert"],
       ["chris", "christopher", "christine", "christina"],
@@ -1770,6 +1770,7 @@ export class OpenAlexImportService {
       orderBy: { id: "asc" },
       select: {
         id: true,
+        authorId: true,
         name: true,
         email: true,
         openalexId: true,
@@ -1834,8 +1835,30 @@ export class OpenAlexImportService {
           data: { cursor: JSON.stringify(checkpoint) },
         });
 
-        const openAlexAuthor =
-          await this.resolveAndLinkResearcherAuthor(researcher);
+        let openAlexAuthor: OpenAlexAuthorEntityRaw | null = null;
+        let linkedAuthorId: string | null = researcher.authorId;
+        if (researcher.author?.openalexId && linkedAuthorId) {
+          openAlexAuthor = await this.client.getAuthor(
+            researcher.author.openalexId,
+          );
+          const primaryNameScore = openAlexAuthor.display_name
+            ? this.personNameScore(researcher.name, openAlexAuthor.display_name)
+            : 0;
+          if (primaryNameScore < 75) {
+            this.logger.warn(
+              `Existing author link for ${researcher.name} is not safe enough for paper sync (${openAlexAuthor.display_name || openAlexAuthor.id}); skipped without changing author_id`,
+            );
+            openAlexAuthor = null;
+          }
+        } else if (params.researcherId) {
+          // An explicitly targeted run may resolve a missing identity. Global
+          // paper backfills never change researcher-author ownership.
+          openAlexAuthor =
+            await this.resolveAndLinkResearcherAuthor(researcher);
+          linkedAuthorId = openAlexAuthor
+            ? this.authorCache.get(openAlexAuthor.id) || null
+            : null;
+        }
         if (!openAlexAuthor) {
           unresolved.push(`${researcher.id}:${researcher.name}`);
           checkpoint.lastCompletedResearcherId = researcher.id;
@@ -1852,7 +1875,6 @@ export class OpenAlexImportService {
           continue;
         }
 
-        const linkedAuthorId = this.authorCache.get(openAlexAuthor.id);
         if (!linkedAuthorId) {
           throw new Error(
             `Local author link was not created for ${researcher.name}`,
