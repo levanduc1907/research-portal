@@ -214,7 +214,7 @@ model EmbeddingRecord {
   paperId          String          @unique @map("paper_id")
   paper            Paper           @relation(fields: [paperId], references: [id], onDelete: Cascade)
   embeddingVersion String          @default("v1") @map("embedding_version")
-  model            String          @default("text-embedding-3-small")
+  model            String          @default("Xenova/multilingual-e5-small")
   contentHash      String          @map("content_hash")
   qdrantPointId    String?         @map("qdrant_point_id")
   status           EmbeddingStatus @default(PENDING)
