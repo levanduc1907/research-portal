@@ -1,6 +1,10 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../database/prisma.service";
-import { PaginatedResult, ResearcherDto } from "@repo/contracts";
+import {
+  PaginatedResult,
+  ResearcherDto,
+  ResearcherPaperDto,
+} from "@repo/contracts";
 
 const FALLBACK_RESEARCHERS: ResearcherDto[] = [
   {
@@ -109,6 +113,23 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
 export class ResearchersService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private lookupWhere(id: string): any {
+    const openalexId = id.startsWith("https://openalex.org/")
+      ? id
+      : /^A\d+$/i.test(id)
+        ? `https://openalex.org/${id.toUpperCase()}`
+        : id;
+
+    return {
+      OR: [
+        { id },
+        { authorId: id },
+        { openalexId },
+        { author: { is: { openalexId } } },
+      ],
+    };
+  }
+
   async findAll(params: {
     query?: string;
     department?: string;
@@ -185,23 +206,33 @@ export class ResearchersService {
     }
   }
 
-  async findDepartments(): Promise<string[]> {
+  async findDepartments(query?: string): Promise<string[]> {
+    const normalizedQuery = query?.trim();
     const records = await this.prisma.researcher.findMany({
-      where: { department: { not: null } },
+      where: {
+        department: {
+          not: null,
+          ...(normalizedQuery ? { contains: normalizedQuery } : {}),
+        },
+      },
       distinct: ["department"],
       select: { department: true },
       orderBy: { department: "asc" },
     });
 
-    return records
-      .map((record) => record.department?.trim())
-      .filter((department): department is string => Boolean(department));
+    return [
+      ...new Set(
+        records
+          .map((record) => record.department?.trim())
+          .filter((department): department is string => Boolean(department)),
+      ),
+    ];
   }
 
   async findById(id: string): Promise<ResearcherDto> {
     try {
-      const record = await this.prisma.researcher.findUnique({
-        where: { id },
+      const record = await this.prisma.researcher.findFirst({
+        where: this.lookupWhere(id),
         include: { keywords: true, author: true },
       });
 
@@ -210,6 +241,20 @@ export class ResearchersService {
         if (fallback) return fallback;
         throw new NotFoundException(`Researcher ${id} not found`);
       }
+
+      const linkedStats = record.authorId
+        ? await Promise.all([
+            this.prisma.paperAuthor.count({
+              where: { authorId: record.authorId },
+            }),
+            this.prisma.paper.aggregate({
+              where: { authors: { some: { authorId: record.authorId } } },
+              _sum: { citedByCount: true },
+            }),
+          ])
+        : null;
+      const linkedWorksCount = linkedStats?.[0] ?? 0;
+      const linkedCitations = linkedStats?.[1]._sum.citedByCount ?? 0;
 
       return {
         id: record.id,
@@ -221,8 +266,8 @@ export class ResearchersService {
         bio: record.bio,
         profileUrl: record.profileUrl,
         photoUrl: record.photoUrl,
-        worksCount: record.worksCount,
-        citedByCount: record.citedByCount,
+        worksCount: Math.max(record.worksCount, linkedWorksCount),
+        citedByCount: Math.max(record.citedByCount, linkedCitations),
         keywords: record.keywords.map((k) => k.keyword),
       };
     } catch (e: any) {
@@ -231,6 +276,86 @@ export class ResearchersService {
       if (fallback) return fallback;
       throw new NotFoundException(`Researcher ${id} not found`);
     }
+  }
+
+  async findPapers(
+    id: string,
+    params: { page?: number; limit?: number },
+  ): Promise<PaginatedResult<ResearcherPaperDto>> {
+    const page = Math.max(1, Number(params.page) || 1);
+    const limit = Math.min(50, Math.max(1, Number(params.limit) || 8));
+    const skip = (page - 1) * limit;
+
+    const researcher = await this.prisma.researcher.findFirst({
+      where: this.lookupWhere(id),
+      select: { authorId: true },
+    });
+
+    if (!researcher) {
+      throw new NotFoundException(`Researcher ${id} not found`);
+    }
+
+    if (!researcher.authorId) {
+      return {
+        data: [],
+        meta: {
+          total: 0,
+          page,
+          limit,
+          totalPages: 0,
+          hasNextPage: false,
+          hasPrevPage: false,
+        },
+      };
+    }
+
+    const where = { authorId: researcher.authorId };
+    const [total, records] = await Promise.all([
+      this.prisma.paperAuthor.count({ where }),
+      this.prisma.paperAuthor.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: [{ paper: { publicationDate: "desc" } }, { paperId: "desc" }],
+        select: {
+          authorPosition: true,
+          isCorresponding: true,
+          paper: {
+            select: {
+              id: true,
+              openalexId: true,
+              title: true,
+              publicationDate: true,
+              publicationYear: true,
+              citedByCount: true,
+              doi: true,
+              landingPageUrl: true,
+              primaryTopic: {
+                select: { id: true, displayName: true },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    const totalPages = Math.ceil(total / limit);
+    return {
+      data: records.map(({ paper, authorPosition, isCorresponding }) => ({
+        ...paper,
+        publicationDate: paper.publicationDate.toISOString(),
+        authorPosition,
+        isCorresponding,
+      })),
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+      },
+    };
   }
 
   private filterFallback(

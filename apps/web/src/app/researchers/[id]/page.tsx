@@ -1,41 +1,57 @@
 "use client";
+
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { ArrowUpRight, BookOpen, Quote } from "lucide-react";
 import type { ResearcherDto } from "@repo/contracts";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Header } from "../../../components/research/header";
 import { Footer } from "../../../components/research/footer";
 import { AiAssistant } from "../../../components/research/ai-assistant";
 import { ResearcherAvatar } from "../../../components/research/researcher-directory";
 import { researchApi } from "../../../lib/research-api";
 import { DEFAULT_RESEARCHERS_RESULT } from "../../../lib/sample-researchers";
+
 export default function ResearcherPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }): React.JSX.Element {
   const { id } = use(params);
-  const [researcher, setResearcher] = useState<ResearcherDto | null>(null);
-  const [status, setStatus] = useState("loading");
+  const [paperPage, setPaperPage] = useState(1);
+  const [showAllTopics, setShowAllTopics] = useState(false);
+
   useEffect(() => {
-    let active = true;
-    researchApi
-      .getResearcher(id)
-      .then((r) => {
-        if (active) {
-          setResearcher(r);
-          setStatus("ready");
-        }
-      })
-      .catch(() => {
-        if (!active) return;
-        const sample = DEFAULT_RESEARCHERS_RESULT.data.find((r) => r.id === id);
-        setResearcher(sample || null);
-        setStatus(sample ? "sample" : "error");
-      });
-    return () => {
-      active = false;
-    };
+    setPaperPage(1);
+    setShowAllTopics(false);
   }, [id]);
+
+  const sampleResearcher =
+    DEFAULT_RESEARCHERS_RESULT.data.find(
+      (researcher) => researcher.id === id,
+    ) ?? null;
+  const researcherQuery = useQuery({
+    queryKey: ["researcher", id],
+    queryFn: () => researchApi.getResearcher(id),
+    retry: false,
+  });
+  const papersQuery = useQuery({
+    queryKey: ["researcher-papers", id, paperPage],
+    queryFn: () =>
+      researchApi.getResearcherPapers(id, { page: paperPage, limit: 8 }),
+    placeholderData: keepPreviousData,
+    retry: false,
+  });
+
+  const researcher: ResearcherDto | null =
+    researcherQuery.data ?? sampleResearcher;
+  const isSample = researcherQuery.isError && Boolean(sampleResearcher);
+  const papers = papersQuery.data;
+  const portalPaperCount = papers?.meta.total;
+  const visibleKeywords = showAllTopics
+    ? (researcher?.keywords ?? [])
+    : (researcher?.keywords.slice(0, 12) ?? []);
+
   return (
     <div className="portal">
       <Header />
@@ -43,7 +59,7 @@ export default function ResearcherPage({
         <Link className="back-link" href="/#faculty">
           ← All researchers
         </Link>
-        {status === "loading" ? (
+        {researcherQuery.isPending ? (
           <div className="empty-state" role="status">
             Loading researcher profile…
           </div>
@@ -57,7 +73,7 @@ export default function ResearcherPage({
           </div>
         ) : (
           <>
-            {status === "sample" && (
+            {isSample && (
               <p className="sample-notice">
                 Sample profile · Live directory unavailable
               </p>
@@ -67,12 +83,14 @@ export default function ResearcherPage({
                 <section className="profile-identity">
                   <ResearcherAvatar researcher={researcher} />
                   <h1>{researcher.name}</h1>
-                  <p>{researcher.title}</p>
+                  <p>{researcher.title || "Researcher"}</p>
                 </section>
                 <section className="profile-panel">
                   <h2>Affiliation</h2>
                   <p>University of Illinois Urbana-Champaign</p>
-                  <strong>{researcher.department}</strong>
+                  <strong>
+                    {researcher.department || "Department not listed"}
+                  </strong>
                 </section>
                 {researcher.bio && (
                   <section className="profile-panel">
@@ -105,6 +123,7 @@ export default function ResearcherPage({
                   )}
                 </section>
               </aside>
+
               <div className="profile-content">
                 <section className="profile-panel topics-panel">
                   <span className="eyebrow">Areas of expertise</span>
@@ -113,20 +132,37 @@ export default function ResearcherPage({
                     Explore the interests that shape{" "}
                     {researcher.name.replace(/^Dr\. /, "")}’s work.
                   </p>
-                  <div className="topic-cloud">
-                    {researcher.keywords.map((k) => (
-                      <Link
-                        key={k}
-                        href={`/?keyword=${encodeURIComponent(k)}#faculty`}
-                      >
-                        {k}
-                      </Link>
-                    ))}
-                  </div>
+                  {!!researcher.keywords.length && (
+                    <div className="topic-cloud">
+                      {visibleKeywords.map((keyword) => (
+                        <Link
+                          key={keyword}
+                          href={`/?keyword=${encodeURIComponent(keyword)}#faculty`}
+                        >
+                          {keyword}
+                        </Link>
+                      ))}
+                      {researcher.keywords.length > 12 && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setShowAllTopics((current) => !current)
+                          }
+                        >
+                          {showAllTopics
+                            ? "Show fewer"
+                            : `+${researcher.keywords.length - 12} more`}
+                        </button>
+                      )}
+                    </div>
+                  )}
                   {!researcher.keywords.length && (
-                    <p>No research topics listed yet.</p>
+                    <p className="profile-muted">
+                      No research topics listed yet.
+                    </p>
                   )}
                 </section>
+
                 <section className="profile-panel">
                   <h2>Research activity</h2>
                   <dl className="profile-metrics">
@@ -140,11 +176,123 @@ export default function ResearcherPage({
                     </div>
                   </dl>
                 </section>
+
+                <section className="profile-panel profile-publications">
+                  <div className="profile-section-heading">
+                    <div>
+                      <span className="eyebrow">Publications</span>
+                      <h2>Scholarly works</h2>
+                    </div>
+                    {portalPaperCount !== undefined && (
+                      <span className="publication-count">
+                        {portalPaperCount.toLocaleString()} indexed
+                      </span>
+                    )}
+                  </div>
+
+                  {papersQuery.isPending ? (
+                    <div className="profile-inline-state" role="status">
+                      Loading publications…
+                    </div>
+                  ) : papersQuery.isError ? (
+                    <div className="profile-inline-state is-error">
+                      Publications could not be loaded. Please try again.
+                    </div>
+                  ) : papers && papers.data.length ? (
+                    <>
+                      <div className="profile-paper-list">
+                        {papers.data.map((paper) => {
+                          const externalUrl = paper.landingPageUrl || paper.doi;
+                          return (
+                            <article className="profile-paper" key={paper.id}>
+                              <div
+                                className="profile-paper-icon"
+                                aria-hidden="true"
+                              >
+                                <BookOpen />
+                              </div>
+                              <div className="profile-paper-content">
+                                <div className="profile-paper-meta">
+                                  <span>{paper.publicationYear}</span>
+                                  <span>{paper.authorPosition} author</span>
+                                  {paper.isCorresponding && (
+                                    <span>Corresponding author</span>
+                                  )}
+                                </div>
+                                <h3>{paper.title}</h3>
+                                <div className="profile-paper-footer">
+                                  <span>
+                                    <Quote aria-hidden="true" />
+                                    {paper.citedByCount.toLocaleString()}{" "}
+                                    citations
+                                  </span>
+                                  {paper.primaryTopic && (
+                                    <span>
+                                      {paper.primaryTopic.displayName}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              {externalUrl && (
+                                <a
+                                  className="profile-paper-link"
+                                  href={
+                                    externalUrl.startsWith("http")
+                                      ? externalUrl
+                                      : `https://doi.org/${externalUrl}`
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  aria-label={`Open publication: ${paper.title}`}
+                                >
+                                  <ArrowUpRight aria-hidden="true" />
+                                </a>
+                              )}
+                            </article>
+                          );
+                        })}
+                      </div>
+
+                      {papers.meta.totalPages > 1 && (
+                        <div className="profile-publication-pagination">
+                          <span>
+                            Page {papers.meta.page} of {papers.meta.totalPages}
+                          </span>
+                          <div>
+                            <button
+                              type="button"
+                              disabled={!papers.meta.hasPrevPage}
+                              onClick={() =>
+                                setPaperPage((current) => current - 1)
+                              }
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              disabled={!papers.meta.hasNextPage}
+                              onClick={() =>
+                                setPaperPage((current) => current + 1)
+                              }
+                            >
+                              Next
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="profile-inline-state">
+                      No publications have been linked to this researcher yet.
+                    </div>
+                  )}
+                </section>
+
                 <section className="profile-panel">
-                  <h2>Scholarly works & background</h2>
+                  <h2>Academic background</h2>
                   <p>
-                    Visit the university profile for available publications,
-                    professional experience, and academic background.
+                    Visit the university profile for professional experience,
+                    appointments, and additional academic information.
                   </p>
                   {researcher.profileUrl ? (
                     <a
@@ -156,7 +304,9 @@ export default function ResearcherPage({
                       Explore university profile ↗
                     </a>
                   ) : (
-                    <p>A university profile link is not available.</p>
+                    <p className="profile-muted">
+                      A university profile link is not available.
+                    </p>
                   )}
                 </section>
               </div>

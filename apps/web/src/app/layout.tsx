@@ -24,9 +24,6 @@ export const metadata: Metadata = {
   title: "Research Portal | University of Illinois Urbana-Champaign",
   description:
     "Discover researchers, areas of expertise, and scholarly profiles at the University of Illinois Urbana-Champaign.",
-  icons: {
-    icon: "/favicon.ico",
-  },
 };
 
 export default function RootLayout({

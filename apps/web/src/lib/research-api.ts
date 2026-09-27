@@ -7,8 +7,9 @@ import {
   PaperListQueryDto,
   PaginatedResult,
   ResearcherDto,
+  ResearcherPaperDto,
   ChatResponseDto,
-  ChatCitationDto,
+  ChatStreamChunkDto,
 } from "@repo/contracts";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
@@ -18,6 +19,7 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
   try {
     const res = await fetch(url, {
       ...options,
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
@@ -33,14 +35,6 @@ async function fetchJson<T>(path: string, options?: RequestInit): Promise<T> {
     console.warn(`Fetch error for ${path}:`, err);
     throw err;
   }
-}
-
-export interface StreamChunkPayload {
-  token?: string;
-  error?: string;
-  route?: string;
-  sources?: ChatCitationDto[];
-  done?: boolean;
 }
 
 export const researchApi = {
@@ -88,6 +82,20 @@ export const researchApi = {
     );
   },
 
+  async getResearcherPapers(
+    id: string,
+    params: { page?: number; limit?: number } = {},
+  ): Promise<PaginatedResult<ResearcherPaperDto>> {
+    const query = new URLSearchParams();
+    if (params.page) query.set("page", String(params.page));
+    if (params.limit) query.set("limit", String(params.limit));
+    const queryString = query.toString();
+
+    return fetchJson<PaginatedResult<ResearcherPaperDto>>(
+      `/v1/researchers/${encodeURIComponent(id)}/papers${queryString ? `?${queryString}` : ""}`,
+    );
+  },
+
   async getResearchers(
     params: {
       query?: string;
@@ -108,31 +116,54 @@ export const researchApi = {
     );
   },
 
-  async getResearcherDepartments(): Promise<string[]> {
-    return fetchJson<string[]>("/v1/researchers/departments");
+  async getResearcherDepartments(
+    query = "",
+    signal?: AbortSignal,
+  ): Promise<string[]> {
+    const params = new URLSearchParams();
+    const normalizedQuery = query.trim();
+    if (normalizedQuery) params.set("query", normalizedQuery);
+
+    const queryString = params.toString();
+    return fetchJson<string[]>(
+      `/v1/researchers/departments${queryString ? `?${queryString}` : ""}`,
+      { signal },
+    );
   },
 
-  async askAssistant(query: string): Promise<ChatResponseDto> {
+  async askAssistant(
+    query: string,
+    conversationId?: string,
+  ): Promise<ChatResponseDto> {
     return fetchJson<ChatResponseDto>("/v1/chat", {
       method: "POST",
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, conversationId }),
       cache: "no-store",
     });
   },
 
   async *streamAssistant(
     query: string,
+    conversationId: string,
     signal?: AbortSignal,
-  ): AsyncGenerator<StreamChunkPayload> {
+  ): AsyncGenerator<ChatStreamChunkDto> {
     const res = await fetch(`${API_BASE_URL}/v1/chat/stream`, {
       method: "POST",
+      credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query }),
+      body: JSON.stringify({ query, conversationId }),
       signal,
     });
 
     if (!res.ok) {
-      throw new Error(`Streaming failed: ${res.statusText}`);
+      let detail = "";
+      try {
+        const payload = (await res.json()) as { message?: string };
+        detail = payload.message ? `: ${payload.message}` : "";
+      } catch {
+        // The response did not contain a JSON error payload.
+      }
+      throw new Error(`Research API returned ${res.status}${detail}`);
     }
 
     const reader = res.body?.getReader();
@@ -141,7 +172,7 @@ export const researchApi = {
     const decoder = new TextDecoder("utf-8");
     let buffer = "";
 
-    const parseEvent = (block: string): StreamChunkPayload | null => {
+    const parseEvent = (block: string): ChatStreamChunkDto | null => {
       const payload = block
         .split(/\r?\n/)
         .filter((line) => line.startsWith("data:"))
@@ -150,7 +181,7 @@ export const researchApi = {
 
       if (!payload) return null;
       try {
-        return JSON.parse(payload) as StreamChunkPayload;
+        return JSON.parse(payload) as ChatStreamChunkDto;
       } catch {
         return null;
       }

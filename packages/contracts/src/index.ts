@@ -95,6 +95,23 @@ export interface ResearcherDto {
   keywords: string[];
 }
 
+export interface ResearcherPaperDto {
+  id: string;
+  openalexId: string;
+  title: string;
+  publicationDate: string;
+  publicationYear: number;
+  citedByCount: number;
+  doi: string | null;
+  landingPageUrl: string | null;
+  authorPosition: string;
+  isCorresponding: boolean;
+  primaryTopic: {
+    id: string;
+    displayName: string;
+  } | null;
+}
+
 export interface AnalyticsStatsDto {
   totalPapers: number;
   totalCitations: number;
@@ -119,6 +136,7 @@ export interface PublicationYearTrendDto {
 
 export interface ChatRequestDto {
   query: string;
+  conversationId?: string;
 }
 
 export interface ChatCitationDto {
@@ -136,6 +154,33 @@ export interface ChatResponseDto {
   sources: ChatCitationDto[];
   confidence: "high" | "medium" | "low";
   latencyMs: number;
+}
+
+export type ChatStreamStatus =
+  | "thinking"
+  | "generating"
+  | "completed"
+  | "error";
+
+export type ChatStreamErrorCode =
+  | "AI_NOT_CONFIGURED"
+  | "AI_QUOTA_EXCEEDED"
+  | "AI_AUTH_FAILED"
+  | "AI_MODEL_UNAVAILABLE"
+  | "VECTOR_SEARCH_FAILED"
+  | "AI_PROVIDER_FAILED"
+  | "CHAT_TIMEOUT"
+  | "CHAT_FAILED";
+
+export interface ChatStreamChunkDto {
+  status: ChatStreamStatus;
+  requestId?: string;
+  token?: string;
+  error?: string;
+  errorCode?: ChatStreamErrorCode;
+  route?: ChatResponseDto["route"];
+  sources?: ChatCitationDto[];
+  done?: boolean;
 }
 
 export type AiProvider = "OPENAI" | "GEMINI" | "OPENAI_COMPATIBLE";
