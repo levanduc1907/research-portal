@@ -1357,11 +1357,14 @@ export class OpenAlexImportService {
       try {
         raw = await this.client.getAuthor(knownOpenAlexId);
         const storedScore = this.authorNameScore(researcher.name, raw);
+        const storedWorksCount = raw.works_count || 0;
+        const mayBeFragmentedAuthor = storedWorksCount <= 10;
         // A previously linked author with a strong name match is already a
         // trusted identity. Re-running paid Author Search for every harmless
         // middle-name or initial variation burns the daily OpenAlex budget
-        // without improving the link. Only repair genuinely weak matches.
-        if (storedScore < 80) {
+        // without improving the link. Search again only for a genuinely weak
+        // match or a suspiciously small OpenAlex author fragment.
+        if (storedScore < 80 || mayBeFragmentedAuthor) {
           const searched = await this.searchOpenAlexAuthor(
             researcher.name,
             researcher.email,
@@ -1370,12 +1373,19 @@ export class OpenAlexImportService {
           const searchedScore = searched
             ? this.authorNameScore(researcher.name, searched)
             : 0;
-          if (searched && searchedScore > storedScore) {
+          const searchedWorksCount = searched?.works_count || 0;
+          const shouldReplaceStoredAuthor =
+            searched &&
+            (searchedScore > storedScore ||
+              (mayBeFragmentedAuthor &&
+                searchedScore === storedScore &&
+                searchedWorksCount > storedWorksCount));
+          if (shouldReplaceStoredAuthor) {
             this.logger.warn(
-              `Replaced stored OpenAlex author ${raw.id} for ${researcher.name} with higher-confidence ${searched.id}`,
+              `Replaced stored OpenAlex author ${raw.id} (${storedWorksCount} works) for ${researcher.name} with ${searched.id} (${searchedWorksCount} works)`,
             );
             raw = searched;
-          } else {
+          } else if (storedScore < 80) {
             raw = searched;
           }
         }
@@ -1393,6 +1403,20 @@ export class OpenAlexImportService {
       institutionId,
     );
     if (!raw) return null;
+
+    const normalizedKnownOpenAlexId = knownOpenAlexId?.replace(
+      "https://openalex.org/",
+      "",
+    );
+    const normalizedResolvedOpenAlexId = raw.id.replace(
+      "https://openalex.org/",
+      "",
+    );
+    if (normalizedResolvedOpenAlexId !== normalizedKnownOpenAlexId) {
+      // Search responses are sufficient for identity ranking, but the
+      // singleton is the canonical source for the latest author-level counts.
+      raw = await this.client.getAuthor(raw.id);
+    }
 
     const authorId = await this.upsertOpenAlexAuthor(raw);
     const conflictingResearcher = await this.prisma.researcher.findFirst({
@@ -1620,6 +1644,20 @@ export class OpenAlexImportService {
             `Incomplete paper sync for ${researcher.name}: ${linkedPaperCount}/${expectedWorks} linked papers after the final cursor`,
           );
         }
+
+        const canonicalAuthor = mapOpenAlexAuthor(openAlexAuthor);
+        await this.prisma.researcher.update({
+          where: { id: researcher.id },
+          data: {
+            openalexId: canonicalAuthor.openalexId,
+            authorId: linkedAuthorId,
+            // The works endpoint count is verified against the persisted join
+            // table after the final cursor and can be fresher than the Author
+            // search document immediately after an OpenAlex author merge.
+            worksCount: expectedWorks ?? linkedPaperCount,
+            citedByCount: canonicalAuthor.citedByCount,
+          },
+        });
 
         checkpoint.lastCompletedResearcherId = researcher.id;
         checkpoint.activeResearcherId = null;
