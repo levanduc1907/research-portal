@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowUpRight, BookOpen, Quote } from "lucide-react";
+import { ArrowUpRight, BookOpen, Quote, Search, X } from "lucide-react";
 import type { ResearcherDto } from "@repo/contracts";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Header } from "../../../components/research/header";
@@ -21,12 +21,24 @@ export default function ResearcherPage({
   const { slug } = use(params);
   const router = useRouter();
   const [paperPage, setPaperPage] = useState(1);
+  const [paperSearch, setPaperSearch] = useState("");
+  const [debouncedPaperSearch, setDebouncedPaperSearch] = useState("");
   const [showAllTopics, setShowAllTopics] = useState(false);
 
   useEffect(() => {
     setPaperPage(1);
+    setPaperSearch("");
+    setDebouncedPaperSearch("");
     setShowAllTopics(false);
   }, [slug]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => setDebouncedPaperSearch(paperSearch.trim()),
+      300,
+    );
+    return () => window.clearTimeout(timer);
+  }, [paperSearch]);
 
   const sampleResearcher =
     DEFAULT_RESEARCHERS_RESULT.data.find(
@@ -38,9 +50,13 @@ export default function ResearcherPage({
     retry: false,
   });
   const papersQuery = useQuery({
-    queryKey: ["researcher-papers", slug, paperPage],
+    queryKey: ["researcher-papers", slug, debouncedPaperSearch, paperPage],
     queryFn: () =>
-      researchApi.getResearcherPapers(slug, { page: paperPage, limit: 8 }),
+      researchApi.getResearcherPapers(slug, {
+        query: debouncedPaperSearch,
+        page: paperPage,
+        limit: 8,
+      }),
     placeholderData: keepPreviousData,
     retry: false,
   });
@@ -193,9 +209,49 @@ export default function ResearcherPage({
                     </div>
                     {portalPaperCount !== undefined && (
                       <span className="publication-count">
-                        {portalPaperCount.toLocaleString()} indexed
+                        {portalPaperCount.toLocaleString()}{" "}
+                        {debouncedPaperSearch ? "results" : "indexed"}
                       </span>
                     )}
+                  </div>
+
+                  <div className="profile-paper-search">
+                    <label htmlFor="paper-title-search">
+                      Search publications by title
+                    </label>
+                    <div className="profile-paper-search-field">
+                      <Search aria-hidden="true" />
+                      <input
+                        id="paper-title-search"
+                        type="search"
+                        value={paperSearch}
+                        placeholder="Enter a paper title…"
+                        autoComplete="off"
+                        onChange={(event) => {
+                          setPaperSearch(event.target.value);
+                          setPaperPage(1);
+                        }}
+                      />
+                      {paperSearch && (
+                        <button
+                          type="button"
+                          aria-label="Clear paper title search"
+                          onClick={() => {
+                            setPaperSearch("");
+                            setPaperPage(1);
+                          }}
+                        >
+                          <X aria-hidden="true" />
+                        </button>
+                      )}
+                    </div>
+                    <span aria-live="polite">
+                      {papersQuery.isFetching && !papersQuery.isPending
+                        ? "Searching…"
+                        : debouncedPaperSearch && portalPaperCount !== undefined
+                          ? `${portalPaperCount.toLocaleString()} matching publication${portalPaperCount === 1 ? "" : "s"}`
+                          : ""}
+                    </span>
                   </div>
 
                   {papersQuery.isPending ? (
@@ -291,7 +347,9 @@ export default function ResearcherPage({
                     </>
                   ) : (
                     <div className="profile-inline-state">
-                      No publications have been linked to this researcher yet.
+                      {debouncedPaperSearch
+                        ? `No publications match “${debouncedPaperSearch}”.`
+                        : "No publications have been linked to this researcher yet."}
                     </div>
                   )}
                 </section>

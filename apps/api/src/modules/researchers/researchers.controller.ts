@@ -48,6 +48,12 @@ export class ResearchersController {
   @ApiOperation({
     summary: "List papers linked to a researcher slug or legacy identifier",
   })
+  @ApiQuery({
+    name: "query",
+    required: false,
+    type: String,
+    description: "Filter the researcher's papers by title",
+  })
   @ApiQuery({ name: "page", required: false, type: Number })
   @ApiQuery({ name: "limit", required: false, type: Number })
   async findPapers(

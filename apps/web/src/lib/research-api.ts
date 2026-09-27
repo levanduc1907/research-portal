@@ -84,9 +84,10 @@ export const researchApi = {
 
   async getResearcherPapers(
     slug: string,
-    params: { page?: number; limit?: number } = {},
+    params: { query?: string; page?: number; limit?: number } = {},
   ): Promise<PaginatedResult<ResearcherPaperDto>> {
     const query = new URLSearchParams();
+    if (params.query) query.set("query", params.query);
     if (params.page) query.set("page", String(params.page));
     if (params.limit) query.set("limit", String(params.limit));
     const queryString = query.toString();

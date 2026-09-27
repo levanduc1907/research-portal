@@ -292,11 +292,12 @@ export class ResearchersService {
 
   async findPapers(
     id: string,
-    params: { page?: number; limit?: number },
+    params: { query?: string; page?: number; limit?: number },
   ): Promise<PaginatedResult<ResearcherPaperDto>> {
     const page = Math.max(1, Number(params.page) || 1);
     const limit = Math.min(50, Math.max(1, Number(params.limit) || 8));
     const skip = (page - 1) * limit;
+    const query = params.query?.trim();
 
     const researcher = await this.prisma.researcher.findFirst({
       where: this.lookupWhere(id),
@@ -321,7 +322,10 @@ export class ResearchersService {
       };
     }
 
-    const where = { authorId: researcher.authorId };
+    const where = {
+      authorId: researcher.authorId,
+      ...(query ? { paper: { title: { contains: query } } } : {}),
+    };
     const [total, records] = await Promise.all([
       this.prisma.paperAuthor.count({ where }),
       this.prisma.paperAuthor.findMany({

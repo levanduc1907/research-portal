@@ -43,6 +43,11 @@ export class DepartmentQuery {
 
 export class ResearcherPaperQuery {
   @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  query?: string;
+
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
