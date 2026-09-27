@@ -36,6 +36,7 @@ export type ChatRequestSumAggregateOutputType = {
 
 export type ChatRequestMinAggregateOutputType = {
   id: string | null
+  conversationId: string | null
   query: string | null
   route: $Enums.ChatRoute | null
   response: string | null
@@ -45,6 +46,7 @@ export type ChatRequestMinAggregateOutputType = {
 
 export type ChatRequestMaxAggregateOutputType = {
   id: string | null
+  conversationId: string | null
   query: string | null
   route: $Enums.ChatRoute | null
   response: string | null
@@ -54,6 +56,7 @@ export type ChatRequestMaxAggregateOutputType = {
 
 export type ChatRequestCountAggregateOutputType = {
   id: number
+  conversationId: number
   query: number
   route: number
   response: number
@@ -74,6 +77,7 @@ export type ChatRequestSumAggregateInputType = {
 
 export type ChatRequestMinAggregateInputType = {
   id?: true
+  conversationId?: true
   query?: true
   route?: true
   response?: true
@@ -83,6 +87,7 @@ export type ChatRequestMinAggregateInputType = {
 
 export type ChatRequestMaxAggregateInputType = {
   id?: true
+  conversationId?: true
   query?: true
   route?: true
   response?: true
@@ -92,6 +97,7 @@ export type ChatRequestMaxAggregateInputType = {
 
 export type ChatRequestCountAggregateInputType = {
   id?: true
+  conversationId?: true
   query?: true
   route?: true
   response?: true
@@ -189,6 +195,7 @@ export type ChatRequestGroupByArgs<ExtArgs extends runtime.Types.Extensions.Inte
 
 export type ChatRequestGroupByOutputType = {
   id: string
+  conversationId: string | null
   query: string
   route: $Enums.ChatRoute
   response: string | null
@@ -222,6 +229,7 @@ export type ChatRequestWhereInput = {
   OR?: Prisma.ChatRequestWhereInput[]
   NOT?: Prisma.ChatRequestWhereInput | Prisma.ChatRequestWhereInput[]
   id?: Prisma.StringFilter<"ChatRequest"> | string
+  conversationId?: Prisma.StringNullableFilter<"ChatRequest"> | string | null
   query?: Prisma.StringFilter<"ChatRequest"> | string
   route?: Prisma.EnumChatRouteFilter<"ChatRequest"> | $Enums.ChatRoute
   response?: Prisma.StringNullableFilter<"ChatRequest"> | string | null
@@ -232,6 +240,7 @@ export type ChatRequestWhereInput = {
 
 export type ChatRequestOrderByWithRelationInput = {
   id?: Prisma.SortOrder
+  conversationId?: Prisma.SortOrderInput | Prisma.SortOrder
   query?: Prisma.SortOrder
   route?: Prisma.SortOrder
   response?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -246,6 +255,7 @@ export type ChatRequestWhereUniqueInput = Prisma.AtLeast<{
   AND?: Prisma.ChatRequestWhereInput | Prisma.ChatRequestWhereInput[]
   OR?: Prisma.ChatRequestWhereInput[]
   NOT?: Prisma.ChatRequestWhereInput | Prisma.ChatRequestWhereInput[]
+  conversationId?: Prisma.StringNullableFilter<"ChatRequest"> | string | null
   query?: Prisma.StringFilter<"ChatRequest"> | string
   route?: Prisma.EnumChatRouteFilter<"ChatRequest"> | $Enums.ChatRoute
   response?: Prisma.StringNullableFilter<"ChatRequest"> | string | null
@@ -256,6 +266,7 @@ export type ChatRequestWhereUniqueInput = Prisma.AtLeast<{
 
 export type ChatRequestOrderByWithAggregationInput = {
   id?: Prisma.SortOrder
+  conversationId?: Prisma.SortOrderInput | Prisma.SortOrder
   query?: Prisma.SortOrder
   route?: Prisma.SortOrder
   response?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -274,6 +285,7 @@ export type ChatRequestScalarWhereWithAggregatesInput = {
   OR?: Prisma.ChatRequestScalarWhereWithAggregatesInput[]
   NOT?: Prisma.ChatRequestScalarWhereWithAggregatesInput | Prisma.ChatRequestScalarWhereWithAggregatesInput[]
   id?: Prisma.StringWithAggregatesFilter<"ChatRequest"> | string
+  conversationId?: Prisma.StringNullableWithAggregatesFilter<"ChatRequest"> | string | null
   query?: Prisma.StringWithAggregatesFilter<"ChatRequest"> | string
   route?: Prisma.EnumChatRouteWithAggregatesFilter<"ChatRequest"> | $Enums.ChatRoute
   response?: Prisma.StringNullableWithAggregatesFilter<"ChatRequest"> | string | null
@@ -284,6 +296,7 @@ export type ChatRequestScalarWhereWithAggregatesInput = {
 
 export type ChatRequestCreateInput = {
   id?: string
+  conversationId?: string | null
   query: string
   route?: $Enums.ChatRoute
   response?: string | null
@@ -294,6 +307,7 @@ export type ChatRequestCreateInput = {
 
 export type ChatRequestUncheckedCreateInput = {
   id?: string
+  conversationId?: string | null
   query: string
   route?: $Enums.ChatRoute
   response?: string | null
@@ -304,6 +318,7 @@ export type ChatRequestUncheckedCreateInput = {
 
 export type ChatRequestUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  conversationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   query?: Prisma.StringFieldUpdateOperationsInput | string
   route?: Prisma.EnumChatRouteFieldUpdateOperationsInput | $Enums.ChatRoute
   response?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -314,6 +329,7 @@ export type ChatRequestUpdateInput = {
 
 export type ChatRequestUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  conversationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   query?: Prisma.StringFieldUpdateOperationsInput | string
   route?: Prisma.EnumChatRouteFieldUpdateOperationsInput | $Enums.ChatRoute
   response?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -324,6 +340,7 @@ export type ChatRequestUncheckedUpdateInput = {
 
 export type ChatRequestCreateManyInput = {
   id?: string
+  conversationId?: string | null
   query: string
   route?: $Enums.ChatRoute
   response?: string | null
@@ -334,6 +351,7 @@ export type ChatRequestCreateManyInput = {
 
 export type ChatRequestUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  conversationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   query?: Prisma.StringFieldUpdateOperationsInput | string
   route?: Prisma.EnumChatRouteFieldUpdateOperationsInput | $Enums.ChatRoute
   response?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -344,6 +362,7 @@ export type ChatRequestUpdateManyMutationInput = {
 
 export type ChatRequestUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
+  conversationId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   query?: Prisma.StringFieldUpdateOperationsInput | string
   route?: Prisma.EnumChatRouteFieldUpdateOperationsInput | $Enums.ChatRoute
   response?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
@@ -360,6 +379,7 @@ export type ChatRequestOrderByRelevanceInput = {
 
 export type ChatRequestCountOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  conversationId?: Prisma.SortOrder
   query?: Prisma.SortOrder
   route?: Prisma.SortOrder
   response?: Prisma.SortOrder
@@ -374,6 +394,7 @@ export type ChatRequestAvgOrderByAggregateInput = {
 
 export type ChatRequestMaxOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  conversationId?: Prisma.SortOrder
   query?: Prisma.SortOrder
   route?: Prisma.SortOrder
   response?: Prisma.SortOrder
@@ -383,6 +404,7 @@ export type ChatRequestMaxOrderByAggregateInput = {
 
 export type ChatRequestMinOrderByAggregateInput = {
   id?: Prisma.SortOrder
+  conversationId?: Prisma.SortOrder
   query?: Prisma.SortOrder
   route?: Prisma.SortOrder
   response?: Prisma.SortOrder
@@ -402,6 +424,7 @@ export type EnumChatRouteFieldUpdateOperationsInput = {
 
 export type ChatRequestSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
+  conversationId?: boolean
   query?: boolean
   route?: boolean
   response?: boolean
@@ -414,6 +437,7 @@ export type ChatRequestSelect<ExtArgs extends runtime.Types.Extensions.InternalA
 
 export type ChatRequestSelectScalar = {
   id?: boolean
+  conversationId?: boolean
   query?: boolean
   route?: boolean
   response?: boolean
@@ -422,13 +446,14 @@ export type ChatRequestSelectScalar = {
   createdAt?: boolean
 }
 
-export type ChatRequestOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "query" | "route" | "response" | "citations" | "latencyMs" | "createdAt", ExtArgs["result"]["chatRequest"]>
+export type ChatRequestOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "conversationId" | "query" | "route" | "response" | "citations" | "latencyMs" | "createdAt", ExtArgs["result"]["chatRequest"]>
 
 export type $ChatRequestPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "ChatRequest"
   objects: {}
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
+    conversationId: string | null
     query: string
     route: $Enums.ChatRoute
     response: string | null
@@ -805,6 +830,7 @@ export interface Prisma__ChatRequestClient<T, Null = never, ExtArgs extends runt
  */
 export interface ChatRequestFieldRefs {
   readonly id: Prisma.FieldRef<"ChatRequest", 'String'>
+  readonly conversationId: Prisma.FieldRef<"ChatRequest", 'String'>
   readonly query: Prisma.FieldRef<"ChatRequest", 'String'>
   readonly route: Prisma.FieldRef<"ChatRequest", 'ChatRoute'>
   readonly response: Prisma.FieldRef<"ChatRequest", 'String'>

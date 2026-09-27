@@ -85,7 +85,7 @@ model Paper {
 model Author {
   id          String   @id @default(uuid())
   openalexId  String   @unique @map("openalex_id")
-  displayName String   @map("display_name")
+  displayName String   @db.Text @map("display_name")
   orcid       String?
   institution String?  @default("University of Illinois Urbana-Champaign")
   createdAt   DateTime @default(now()) @map("created_at")
@@ -228,14 +228,16 @@ model EmbeddingRecord {
 }
 
 model ChatRequest {
-  id         String     @id @default(uuid())
-  query      String     @db.Text
-  route      ChatRoute  @default(SEMANTIC)
-  response   String?    @db.LongText
-  citations  Json?
-  latencyMs  Int?       @map("latency_ms")
-  createdAt  DateTime   @default(now()) @map("created_at")
+  id             String    @id @default(uuid())
+  conversationId String?   @map("conversation_id")
+  query          String    @db.Text
+  route          ChatRoute @default(SEMANTIC)
+  response       String?   @db.LongText
+  citations      Json?
+  latencyMs      Int?      @map("latency_ms")
+  createdAt      DateTime  @default(now()) @map("created_at")
 
+  @@index([conversationId, createdAt])
   @@map("chat_requests")
 }
 

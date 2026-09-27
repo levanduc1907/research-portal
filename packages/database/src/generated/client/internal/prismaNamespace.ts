@@ -1421,6 +1421,7 @@ export type EmbeddingRecordScalarFieldEnum = (typeof EmbeddingRecordScalarFieldE
 
 export const ChatRequestScalarFieldEnum = {
   id: 'id',
+  conversationId: 'conversationId',
   query: 'query',
   route: 'route',
   response: 'response',
@@ -1619,6 +1620,7 @@ export type EmbeddingRecordOrderByRelevanceFieldEnum = (typeof EmbeddingRecordOr
 
 export const ChatRequestOrderByRelevanceFieldEnum = {
   id: 'id',
+  conversationId: 'conversationId',
   query: 'query',
   response: 'response'
 } as const
