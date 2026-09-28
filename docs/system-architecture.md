@@ -224,6 +224,7 @@ flowchart TB
 | `Institution`       | UIUC identity, geography, URLs, OpenAlex totals, h-index, i10-index, and summary statistics            | Unique `openalexId`                                                       |
 | `Researcher`        | Curated portal profile with name, slug, email, department, title, biography, links, and summary counts | Unique slug, optional unique `authorId`, transitional unique `openalexId` |
 | `Author`            | Canonical OpenAlex bibliographic identity                                                              | Unique `openalexId`                                                       |
+| `AuthorAffiliation` | Explicit Author-Institution membership; researcher-linked authors are linked to UIUC                   | Unique `(authorId, institutionId)`                                        |
 | `Paper`             | Canonical scholarly work and metadata                                                                  | Unique `openalexId`; optional primary topic                               |
 | `PaperAuthor`       | Authorship relation, position, and corresponding status                                                | Unique `(paperId, authorId)`                                              |
 | `Topic`             | OpenAlex topic hierarchy                                                                               | Unique `openalexId`                                                       |
@@ -266,7 +267,15 @@ erDiagram
         string openalex_id UK
         text display_name
         string orcid
-        string institution
+    }
+
+    AUTHOR_AFFILIATION {
+        string id PK
+        string author_id FK
+        string institution_id FK
+        string source
+        boolean is_current
+        json years
     }
 
     PAPER {
@@ -352,6 +361,8 @@ erDiagram
 
     RESEARCHER o|--|| AUTHOR : resolves_to
     RESEARCHER ||--o{ RESEARCHER_KEYWORD : has
+    AUTHOR ||--o{ AUTHOR_AFFILIATION : affiliated_with
+    INSTITUTION ||--o{ AUTHOR_AFFILIATION : includes
     AUTHOR ||--o{ PAPER_AUTHOR : writes
     PAPER ||--o{ PAPER_AUTHOR : credits
     PAPER ||--o{ PAPER_TOPIC : classified_by
@@ -410,45 +421,20 @@ pnpm --filter worker sync:institution
 ### 8.2 End-to-end researcher and paper ingestion
 
 ```mermaid
-flowchart TD
-    Start([Start worker command])
-    Source{Researcher source}
-    CSV[CSV or TSV faculty data]
-    Existing[Existing Researcher rows]
-    OAAuthors[OpenAlex author results]
+flowchart LR
+    Faculty[UIUC faculty list] --> Identity[Normalize profiles and resolve Authors]
+    OpenAlex[(OpenAlex API)] --> Identity
 
-    Parse[Validate and normalize profile]
-    UpsertR[Upsert Researcher, slug, and keywords]
-    Resolve[Resolve canonical OpenAlex Author]
-    Safe{Unique high-confidence candidate?}
-    Unresolved[Keep authorId null and record reason]
-    Link[Upsert Author and link Researcher.authorId]
+    Identity --> AuthorWorks[Fetch works by verified Author]
+    OpenAlex --> InstitutionWorks[Fetch works by UIUC institution]
 
-    Fetch[Fetch every Author work with cursor pagination]
-    Map[Map work, abstract, authorships, and topics]
-    UpsertP[Upsert Paper by openalexId]
-    Graph[Upsert Authors, Topics, PaperAuthor, and PaperTopic]
-    Canonical[Ensure requesting Author relation exists]
-    Queue[Create or reset EmbeddingRecord]
-    Reconcile[Remove stale Author-paper relations]
-    Verify{Local relation count equals OpenAlex meta.count?}
-    Save[Persist ImportRun checkpoint]
-    Failed([Mark run FAILED with resumable cursor])
-    Done([Mark run COMPLETED])
+    AuthorWorks --> Normalize[Normalize and deduplicate by OpenAlex ID]
+    InstitutionWorks --> Normalize
 
-    Start --> Source
-    Source --> CSV --> Parse --> UpsertR
-    Source --> Existing --> Resolve
-    Source --> OAAuthors --> UpsertR
-    UpsertR --> Resolve
-    Resolve --> Safe
-    Safe -->|No| Unresolved --> Save
-    Safe -->|Yes| Link --> Fetch --> Map --> UpsertP --> Graph --> Canonical --> Queue
-    Queue --> Reconcile --> Verify
-    Verify -->|No| Failed
-    Verify -->|Yes| Save
-    Save -->|More researchers| Resolve
-    Save -->|All processed| Done
+    Normalize --> MySQL[(MySQL: Researchers, Papers, Authors, Topics)]
+    MySQL -. cursor and status .-> Checkpoint[(ImportRun checkpoint)]
+    MySQL --> Embed[Local E5 embeddings]
+    Embed --> Qdrant[(Qdrant)]
 ```
 
 ### 8.3 OpenAlex client behavior
