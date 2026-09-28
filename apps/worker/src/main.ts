@@ -16,6 +16,7 @@ async function bootstrap() {
     command === "import-faculty" ||
     command === "import-faculty-csv" ||
     command === "import-phase2" ||
+    command === "sync-institution" ||
     command === "link-researcher-authors" ||
     command === "sync-researcher-metrics" ||
     command === "backfill-researcher-papers" ||
@@ -25,6 +26,10 @@ async function bootstrap() {
     const importer = app.get(OpenAlexImportService);
     let failed = false;
 
+    if (command === "sync-institution" || command === "import-phase2") {
+      const result = await importer.syncInstitutionProfile();
+      failed ||= result.status === "FAILED";
+    }
     if (command === "import-papers" || command === "import-phase2") {
       const result = await importer.runImport();
       failed ||= result.status === "FAILED";

@@ -14,7 +14,11 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
 import { PrismaService } from "../../database/prisma.service";
-import { researcherSlugSuffix, slugifyResearcherName } from "@repo/database";
+import {
+  Prisma,
+  researcherSlugSuffix,
+  slugifyResearcherName,
+} from "@repo/database";
 
 type ImportResult = {
   totalFetched: number;
@@ -37,6 +41,27 @@ type ResearcherIdentity = {
   department?: string | null;
   keywords?: Array<{ keyword: string }>;
   author: { openalexId: string } | null;
+};
+
+type OpenAlexInstitutionRaw = {
+  id: string;
+  display_name?: string | null;
+  display_name_acronyms?: string[];
+  ror?: string | null;
+  ids?: { ror?: string | null };
+  country_code?: string | null;
+  type?: string | null;
+  homepage_url?: string | null;
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
+  works_count?: number;
+  cited_by_count?: number;
+  summary_stats?: {
+    h_index?: number;
+    i10_index?: number;
+    "2yr_mean_citedness"?: number;
+  } | null;
+  geo?: Record<string, unknown> | null;
 };
 
 @Injectable()
@@ -63,6 +88,52 @@ export class OpenAlexImportService {
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)
       : fallback;
+  }
+
+  async syncInstitutionProfile(
+    institutionId: string = "I157725225",
+  ): Promise<ImportResult> {
+    try {
+      const raw = (await this.client.getInstitution(
+        institutionId,
+      )) as OpenAlexInstitutionRaw;
+      const summaryStats = raw.summary_stats ?? null;
+      const data = {
+        displayName:
+          raw.display_name || "University of Illinois Urbana-Champaign",
+        acronym: raw.display_name_acronyms?.[0] || "UIUC",
+        ror: raw.ror || raw.ids?.ror || null,
+        countryCode: raw.country_code || null,
+        type: raw.type || null,
+        homepageUrl: raw.homepage_url || "https://illinois.edu",
+        imageUrl: raw.image_url || raw.image_thumbnail_url || null,
+        worksCount: raw.works_count || 0,
+        citedByCount: raw.cited_by_count || 0,
+        hIndex: summaryStats?.h_index ?? null,
+        i10Index: summaryStats?.i10_index ?? null,
+        twoYearMeanCite: summaryStats?.["2yr_mean_citedness"] ?? null,
+        ...(raw.geo ? { geo: raw.geo as Prisma.InputJsonValue } : {}),
+        ...(summaryStats
+          ? { summaryStats: summaryStats as Prisma.InputJsonValue }
+          : {}),
+      };
+      await this.prisma.institution.upsert({
+        where: { openalexId: raw.id },
+        update: data,
+        create: {
+          openalexId: raw.id,
+          ...data,
+        },
+      });
+      this.logger.log(
+        `Synced institution profile: ${data.displayName} (${data.worksCount} works, ${data.citedByCount} citations)`,
+      );
+      return { totalFetched: 1, totalImported: 1, status: "COMPLETED" };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`Institution profile sync failed: ${message}`);
+      return { totalFetched: 1, totalImported: 0, status: "FAILED" };
+    }
   }
 
   private async uniqueResearcherSlug(
