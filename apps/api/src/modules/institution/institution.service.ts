@@ -2,6 +2,12 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "../database/prisma.service";
 import { InstitutionDto } from "@repo/contracts";
 
+export const UIUC_INSTITUTION_CONTEXT = {
+  foundedYear: 1867,
+  classification: "public land-grant research university",
+  location: "Urbana and Champaign, Illinois, United States",
+} as const;
+
 const FALLBACK_INSTITUTION: InstitutionDto = {
   id: "uiuc-default",
   openalexId: "https://openalex.org/I157725225",

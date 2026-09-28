@@ -1,4 +1,8 @@
-import { Injectable, ServiceUnavailableException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { QdrantClient } from "@qdrant/js-client-rest";
 import { LocalTextEmbedder, TextEmbedder } from "@repo/embeddings";
@@ -16,16 +20,29 @@ export interface VectorEvidencePaper {
   score: number;
 }
 
+export interface VectorSearchOptions {
+  limit?: number;
+  year?: number;
+  yearFrom?: number;
+  yearTo?: number;
+  authorName?: string;
+  traceId?: string;
+}
+
 @Injectable()
 export class VectorSearchService {
+  private readonly logger = new Logger(VectorSearchService.name);
   private readonly client: QdrantClient;
   private readonly collectionName: string;
   private readonly embeddingModel: string;
   private readonly embeddingDimensions: number;
   private readonly scoreThreshold: number;
   private readonly embedder: TextEmbedder;
+  private readonly traceEnabled: boolean;
 
   constructor(config: ConfigService) {
+    this.traceEnabled =
+      config.get<string>("CHAT_TRACE_ENABLED", "false") === "true";
     this.collectionName = config.get("QDRANT_COLLECTION", "uiuc_papers_e5_v1");
     this.embeddingModel = config.get(
       "LOCAL_EMBEDDING_MODEL",
@@ -49,32 +66,63 @@ export class VectorSearchService {
 
   async search(
     query: string,
-    limit = 5,
-    year?: number,
+    options: VectorSearchOptions = {},
   ): Promise<VectorEvidencePaper[]> {
+    const limit = Math.min(Math.max(options.limit ?? 5, 1), 10);
+    this.trace(options.traceId, "vector.input", { query, options, limit });
     const [vector] = await this.embedder.embed([query], "query");
     if (!vector || vector.length !== this.embeddingDimensions) {
       throw new ServiceUnavailableException(
         `Embedding provider returned ${vector?.length ?? 0} dimensions; expected ${this.embeddingDimensions}.`,
       );
     }
+    this.trace(options.traceId, "vector.embedding", {
+      model: this.embeddingModel,
+      dimensions: vector.length,
+      vector,
+    });
 
     try {
+      const must: Array<Record<string, unknown>> = [];
+      if (options.year) {
+        must.push({
+          key: "publicationYear",
+          match: { value: options.year },
+        });
+      } else if (options.yearFrom || options.yearTo) {
+        must.push({
+          key: "publicationYear",
+          range: {
+            ...(options.yearFrom ? { gte: options.yearFrom } : {}),
+            ...(options.yearTo ? { lte: options.yearTo } : {}),
+          },
+        });
+      }
+      if (options.authorName) {
+        must.push({
+          key: "authors",
+          match: { value: options.authorName },
+        });
+      }
+
+      this.trace(options.traceId, "vector.qdrant_request", {
+        collection: this.collectionName,
+        limit,
+        scoreThreshold: this.scoreThreshold,
+        filter: must.length ? { must } : null,
+      });
+
       const result = await this.client.query(this.collectionName, {
         query: vector,
         limit,
         with_payload: true,
         score_threshold: this.scoreThreshold,
-        ...(year
-          ? {
-              filter: {
-                must: [{ key: "publicationYear", match: { value: year } }],
-              },
-            }
-          : {}),
+        ...(must.length ? { filter: { must } } : {}),
       });
 
-      return result.points.flatMap((point) => {
+      this.trace(options.traceId, "vector.qdrant_raw_response", result);
+
+      const papers = result.points.flatMap((point) => {
         const payload = point.payload;
         if (!payload || typeof payload.title !== "string") return [];
         return [
@@ -103,10 +151,28 @@ export class VectorSearchService {
           },
         ];
       });
+      this.trace(options.traceId, "vector.mapped_evidence", { papers });
+      return papers;
     } catch (error) {
       throw new ServiceUnavailableException(
         `Vector search is unavailable: ${error instanceof Error ? error.message : "unknown Qdrant error"}`,
       );
     }
+  }
+
+  private trace(requestId: string | undefined, step: string, data: unknown) {
+    if (!this.traceEnabled || !requestId) return;
+    this.logger.log(
+      `[AI_FLOW]\n${JSON.stringify(
+        {
+          timestamp: new Date().toISOString(),
+          requestId,
+          step,
+          data,
+        },
+        null,
+        2,
+      )}`,
+    );
   }
 }

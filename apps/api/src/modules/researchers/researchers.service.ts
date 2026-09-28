@@ -5,6 +5,10 @@ import {
   ResearcherDto,
   ResearcherPaperDto,
 } from "@repo/contracts";
+import {
+  expandResearchTopicTerms,
+  normalizeResearchSearchTerm,
+} from "../../common/research-topic-aliases";
 
 const FALLBACK_RESEARCHERS: ResearcherDto[] = [
   {
@@ -148,20 +152,68 @@ export class ResearchersService {
 
     try {
       const where: any = {};
+      if (params.department) {
+        where.department = params.department;
+      }
       if (params.query) {
-        where.OR = [
+        const searchTerms = expandResearchTopicTerms(params.query);
+        const phraseTerms = searchTerms.filter(
+          (term) => normalizeResearchSearchTerm(term).length > 3,
+        );
+        const abbreviations = searchTerms.filter(
+          (term) => normalizeResearchSearchTerm(term).length <= 3,
+        );
+        const keywordMatches = [
+          ...phraseTerms.map((term) => ({ keyword: { contains: term } })),
+          ...abbreviations.flatMap((term) => [
+            { keyword: { equals: term } },
+            { keyword: { startsWith: `${term} ` } },
+            { keyword: { startsWith: `${term}-` } },
+            { keyword: { contains: ` ${term} ` } },
+            { keyword: { contains: ` ${term}-` } },
+            { keyword: { endsWith: ` ${term}` } },
+          ]),
+        ];
+        const directMatches = [
           { name: { contains: params.query } },
-          { bio: { contains: params.query } },
+          ...phraseTerms.map((term) => ({ bio: { contains: term } })),
           {
             keywords: {
-              some: { keyword: { contains: params.query } },
+              some: { OR: keywordMatches },
             },
           },
         ];
-      }
-
-      if (params.department) {
-        where.department = params.department;
+        const topicMatches = phraseTerms.map((term) => ({
+          author: {
+            is: {
+              papers: {
+                some: {
+                  paper: {
+                    OR: [
+                      {
+                        primaryTopic: {
+                          is: { displayName: { contains: term } },
+                        },
+                      },
+                      {
+                        topics: {
+                          some: { topic: { displayName: { contains: term } } },
+                        },
+                      },
+                    ],
+                  },
+                },
+              },
+            },
+          },
+        }));
+        const directCount = await this.prisma.researcher.count({
+          where: {
+            ...(params.department ? { department: params.department } : {}),
+            OR: directMatches,
+          },
+        });
+        where.OR = directCount > 0 ? directMatches : topicMatches;
       }
 
       const [total, records] = await Promise.all([

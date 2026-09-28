@@ -258,10 +258,14 @@ every 60 seconds by default. Configure it with `VECTOR_SYNC_ENABLED`,
 `VECTOR_SYNC_INTERVAL_MS`, and `VECTOR_SYNC_BATCH_SIZE`. The ONNX model is
 downloaded once into the shared local cache and reused by both API and worker.
 
-For question answering, add an active default OpenAI credential through
+For question answering, add one or more active AI credentials through
 `POST /v1/admin/ai-credentials` (authenticated with
-`AI_CREDENTIALS_ADMIN_TOKEN`). The API embeds semantic questions, retrieves
-the closest papers from Qdrant, sends only that evidence to the configured
-model, and streams the grounded answer from `POST /v1/chat/stream`. Until a
-key is configured, the endpoint returns a clear configuration error and never
-falls back to a fabricated answer.
+`AI_CREDENTIALS_ADMIN_TOKEN`). The default credential is tried first, followed
+by the other active credentials in creation order, then by the Gemini
+environment-variable fallback. A failed key enters a temporary in-process
+cooldown, and an environment key already present in the database is not tried
+twice. Fallback happens only before the first response token is emitted, so one
+answer is never assembled from multiple models. The API embeds semantic
+questions, retrieves the closest papers from Qdrant, sends only that evidence
+to the configured model, and streams the grounded answer from
+`POST /v1/chat/stream`.

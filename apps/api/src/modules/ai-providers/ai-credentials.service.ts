@@ -17,11 +17,17 @@ import type {
   UpdateAiCredentialRequest,
 } from "./ai-credential.dto";
 
+interface AiTraceContext {
+  requestId: string;
+  purpose: "classification" | "answer";
+}
+
 @Injectable()
 export class AiCredentialsService {
   private readonly logger = new Logger(AiCredentialsService.name);
   private consecutiveTransientFailures = 0;
   private circuitOpenUntil = 0;
+  private readonly credentialCooldowns = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -50,7 +56,7 @@ export class AiCredentialsService {
 
   async findAll(): Promise<AiCredentialDto[]> {
     const items = await this.prisma.aiCredential.findMany({
-      orderBy: [{ isDefault: "desc" }, { updatedAt: "desc" }],
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
     });
     return items.map((item) => this.toDto(item));
   }
@@ -151,19 +157,119 @@ export class AiCredentialsService {
     prompt: string,
     onToken: (token: string) => void,
     signal?: AbortSignal,
+    traceContext?: AiTraceContext,
   ): Promise<boolean> {
     if (this.circuitOpenUntil > Date.now()) {
       throw new ServiceUnavailableException(
         "AI provider circuit breaker is open. Please retry later.",
       );
     }
-    const credential = await this.prisma.aiCredential.findFirst({
-      where: { isDefault: true, isActive: true },
-      orderBy: { updatedAt: "desc" },
+    const credentials = await this.prisma.aiCredential.findMany({
+      where: { isActive: true },
+      orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
     });
-    if (!credential) {
-      const geminiKey = this.config.get<string>("GEMINI_API_KEY");
-      if (!geminiKey) return false;
+    this.traceProvider(traceContext, "provider.candidates", {
+      candidates: credentials.map((credential) => ({
+        id: credential.id,
+        name: credential.name,
+        provider: credential.provider,
+        model: credential.defaultModel,
+        baseUrl: credential.baseUrl,
+        isDefault: credential.isDefault,
+        coolingDown: this.isCredentialCoolingDown(credential.id),
+      })),
+    });
+
+    let lastError: Error | null = null;
+    for (const credential of credentials) {
+      if (this.isCredentialCoolingDown(credential.id)) {
+        this.traceProvider(traceContext, "provider.skipped", {
+          credentialId: credential.id,
+          name: credential.name,
+          reason: "cooldown",
+        });
+        continue;
+      }
+
+      let emittedToken = false;
+      let emittedCharacters = 0;
+      try {
+        this.traceProvider(traceContext, "provider.attempt", {
+          credentialId: credential.id,
+          name: credential.name,
+          provider: credential.provider,
+          model: credential.defaultModel,
+          baseUrl: credential.baseUrl,
+        });
+        await this.streamWithProtection(
+          this.adapters.get(credential.provider as AiProvider),
+          {
+            apiKey: this.crypto.decrypt(
+              credential.encryptedApiKey,
+              credential.encryptionIv,
+              credential.encryptionTag,
+            ),
+            baseUrl: credential.baseUrl,
+            model: credential.defaultModel,
+          },
+          prompt,
+          (token) => {
+            emittedToken = true;
+            emittedCharacters += token.length;
+            onToken(token);
+          },
+          signal,
+        );
+        this.credentialCooldowns.delete(credential.id);
+        this.traceProvider(traceContext, "provider.success", {
+          credentialId: credential.id,
+          name: credential.name,
+          provider: credential.provider,
+          model: credential.defaultModel,
+          emittedCharacters,
+        });
+        return true;
+      } catch (reason) {
+        const error =
+          reason instanceof Error ? reason : new Error("Unknown AI error");
+        if (signal?.aborted) throw error;
+
+        const canFallback = this.isCredentialFallbackFailure(error.message);
+        if (canFallback) {
+          const cooldownMs = this.cooldownCredential(
+            credential.id,
+            error.message,
+          );
+          this.logger.warn(
+            `AI credential ${this.safeCredentialName(credential.name)} is temporarily unavailable; cooldownMs=${cooldownMs}; emittedToken=${emittedToken}; tryingFallback=${!emittedToken}; reason=${this.safeErrorMessage(error.message)}`,
+          );
+        }
+
+        this.traceProvider(traceContext, "provider.failure", {
+          credentialId: credential.id,
+          name: credential.name,
+          provider: credential.provider,
+          model: credential.defaultModel,
+          emittedToken,
+          canFallback,
+          error: this.safeErrorMessage(error.message),
+        });
+        if (emittedToken || !canFallback) throw error;
+        lastError = error;
+      }
+    }
+
+    const geminiKey = this.config.get<string>("GEMINI_API_KEY");
+    const geminiKeyAlreadyConfigured =
+      geminiKey &&
+      credentials.some((credential) =>
+        this.credentialMatchesApiKey(credential, geminiKey),
+      );
+    if (geminiKey && !geminiKeyAlreadyConfigured) {
+      this.traceProvider(traceContext, "provider.env_fallback_attempt", {
+        provider: "GEMINI",
+        model: this.config.get("GEMINI_CHAT_MODEL", "gemini-flash-latest"),
+      });
       await this.streamWithProtection(
         this.adapters.get("GEMINI"),
         {
@@ -175,24 +281,122 @@ export class AiCredentialsService {
         onToken,
         signal,
       );
+      this.traceProvider(traceContext, "provider.env_fallback_success", {
+        provider: "GEMINI",
+      });
       return true;
     }
-    await this.streamWithProtection(
-      this.adapters.get(credential.provider as AiProvider),
-      {
-        apiKey: this.crypto.decrypt(
+
+    if (lastError) throw lastError;
+    if (credentials.length > 0) {
+      throw new ServiceUnavailableException(
+        "All active AI credentials are temporarily cooling down.",
+      );
+    }
+    return false;
+  }
+
+  async completeDefault(
+    prompt: string,
+    signal?: AbortSignal,
+    traceContext?: AiTraceContext,
+  ): Promise<string | null> {
+    let output = "";
+    const usedProvider = await this.streamDefault(
+      prompt,
+      (token) => {
+        output += token;
+      },
+      signal,
+      traceContext,
+    );
+    return usedProvider ? output.trim() : null;
+  }
+
+  private credentialMatchesApiKey(
+    credential: AiCredential,
+    apiKey: string,
+  ): boolean {
+    try {
+      return (
+        this.crypto.decrypt(
           credential.encryptedApiKey,
           credential.encryptionIv,
           credential.encryptionTag,
-        ),
-        baseUrl: credential.baseUrl,
-        model: credential.defaultModel,
-      },
-      prompt,
-      onToken,
-      signal,
+        ) === apiKey
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  private isCredentialCoolingDown(id: string): boolean {
+    const unavailableUntil = this.credentialCooldowns.get(id);
+    if (!unavailableUntil) return false;
+    if (unavailableUntil > Date.now()) return true;
+    this.credentialCooldowns.delete(id);
+    return false;
+  }
+
+  private cooldownCredential(id: string, message: string): number {
+    const authOrQuotaFailure =
+      /provider returned (401|402|403|429)/i.test(message) ||
+      /api key|unauthorized|permission denied|quota|rate limit|resource_exhausted|insufficient balance/i.test(
+        message,
+      );
+    const cooldownMs = authOrQuotaFailure
+      ? this.positiveInt("AI_CREDENTIAL_FAILURE_COOLDOWN_MS", 10 * 60_000)
+      : this.positiveInt("AI_CREDENTIAL_TRANSIENT_COOLDOWN_MS", 30_000);
+    this.credentialCooldowns.set(id, Date.now() + cooldownMs);
+    return cooldownMs;
+  }
+
+  private isCredentialFallbackFailure(message: string): boolean {
+    return (
+      /provider returned (401|402|403|404|429|5\d\d)/i.test(message) ||
+      /api key|unauthorized|permission denied|quota|rate limit|resource_exhausted|insufficient balance|fetch failed|timed?\s*out|unavailable/i.test(
+        message,
+      )
     );
-    return true;
+  }
+
+  private safeCredentialName(name: string): string {
+    return JSON.stringify(name.replace(/[\r\n]/g, " ").slice(0, 80));
+  }
+
+  private safeErrorMessage(message: string): string {
+    return message
+      .replace(/Bearer\s+\S+/gi, "Bearer [REDACTED]")
+      .replace(/sk-(?:proj-)?[A-Za-z0-9_-]{12,}/g, "[REDACTED_OPENAI_KEY]")
+      .replace(/AQ\.[A-Za-z0-9_-]{12,}/g, "[REDACTED_GEMINI_KEY]")
+      .replace(/[\r\n]/g, " ")
+      .slice(0, 160);
+  }
+
+  private traceProvider(
+    context: AiTraceContext | undefined,
+    step: string,
+    data: Record<string, unknown>,
+  ): void {
+    if (
+      !context ||
+      this.config.get<string>("CHAT_TRACE_ENABLED", "false") !== "true"
+    ) {
+      return;
+    }
+    this.logger.log(
+      `[AI_FLOW]\n${JSON.stringify(
+        {
+          timestamp: new Date().toISOString(),
+          requestId: context.requestId,
+          step,
+          purpose: context.purpose,
+          data,
+        },
+        null,
+        2,
+      )}`,
+    );
   }
 
   private async streamWithProtection(
