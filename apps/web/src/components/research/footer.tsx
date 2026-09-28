@@ -10,12 +10,32 @@ import {
 import { BlockILogo } from "./illinois-logo";
 
 const socialLinks = [
-  { label: "Facebook", href: "https://www.facebook.com/Illinois1867", Icon: FaFacebookF },
-  { label: "Instagram", href: "https://www.instagram.com/illinois1867/", Icon: FaInstagram },
+  {
+    label: "Facebook",
+    href: "https://www.facebook.com/Illinois1867",
+    Icon: FaFacebookF,
+  },
+  {
+    label: "Instagram",
+    href: "https://www.instagram.com/illinois1867/",
+    Icon: FaInstagram,
+  },
   { label: "X", href: "https://x.com/Illinois_Alma", Icon: FaXTwitter },
-  { label: "LinkedIn", href: "https://www.linkedin.com/school/university-of-illinois-urbana-champaign/", Icon: FaLinkedinIn },
-  { label: "YouTube", href: "https://www.youtube.com/user/Illinois1867", Icon: FaYoutube },
-  { label: "TikTok", href: "https://www.tiktok.com/@illinois1867", Icon: FaTiktok },
+  {
+    label: "LinkedIn",
+    href: "https://www.linkedin.com/school/university-of-illinois-urbana-champaign/",
+    Icon: FaLinkedinIn,
+  },
+  {
+    label: "YouTube",
+    href: "https://www.youtube.com/user/Illinois1867",
+    Icon: FaYoutube,
+  },
+  {
+    label: "TikTok",
+    href: "https://www.tiktok.com/@illinois1867",
+    Icon: FaTiktok,
+  },
 ];
 
 const footerGroups = [
@@ -40,7 +60,10 @@ const footerGroups = [
   {
     title: "Access University Resources",
     links: [
-      ["Emergency Services", "https://police.illinois.edu/emergency-preparedness/"],
+      [
+        "Emergency Services",
+        "https://police.illinois.edu/emergency-preparedness/",
+      ],
       ["McKinley Health Center", "https://mckinley.illinois.edu/"],
       ["Connie Frank CARE Center", "https://wecare.illinois.edu/"],
       ["University Library", "https://www.library.illinois.edu/"],
@@ -51,7 +74,10 @@ const footerGroups = [
 const legalLinks = [
   ["Privacy Policy", "https://www.vpaa.uillinois.edu/resources/web_privacy"],
   ["Copyright", "https://illinois.edu/copyright/"],
-  ["Consumer Information", "https://provost.illinois.edu/student-consumer-information/"],
+  [
+    "Consumer Information",
+    "https://provost.illinois.edu/student-consumer-information/",
+  ],
   ["Website Feedback", "https://illinois.edu/about/contact.html"],
   ["Accessibility", "https://illinois.edu/about/accessibility.html"],
 ] as const;
@@ -61,7 +87,13 @@ export function Footer(): React.JSX.Element {
     <footer className="portal-footer">
       <nav className="footer-social" aria-label="Illinois social media">
         {socialLinks.map(({ label, href, Icon }) => (
-          <a key={label} href={href} target="_blank" rel="noreferrer" aria-label={label}>
+          <a
+            key={label}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={label}
+          >
             <Icon aria-hidden="true" />
           </a>
         ))}
@@ -69,7 +101,12 @@ export function Footer(): React.JSX.Element {
 
       <div className="footer-main">
         <div className="portal-container footer-main-inner">
-          <a className="footer-brand" href="https://illinois.edu/" target="_blank" rel="noreferrer">
+          <a
+            className="footer-brand"
+            href="https://illinois.edu/"
+            target="_blank"
+            rel="noreferrer"
+          >
             <BlockILogo className="footer-block-i" />
             <span>ILLINOIS</span>
           </a>
@@ -80,7 +117,9 @@ export function Footer(): React.JSX.Element {
                 <ul>
                   {group.links.map(([label, href]) => (
                     <li key={label}>
-                      <a href={href} target="_blank" rel="noreferrer">{label}</a>
+                      <a href={href} target="_blank" rel="noreferrer">
+                        {label}
+                      </a>
                     </li>
                   ))}
                 </ul>
@@ -92,20 +131,24 @@ export function Footer(): React.JSX.Element {
 
       <div className="footer-legal">
         <div className="portal-container footer-legal-inner">
-          <a className="footer-cookie-link" href="https://www.vpaa.uillinois.edu/resources/web_privacy" target="_blank" rel="noreferrer">
+          <a
+            className="footer-cookie-link"
+            href="https://www.vpaa.uillinois.edu/resources/web_privacy"
+            target="_blank"
+            rel="noreferrer"
+          >
             About Cookies
           </a>
           <nav aria-label="Legal information">
             {legalLinks.map(([label, href]) => (
               <a key={label} href={href} target="_blank" rel="noreferrer">
                 {label}
-                {label === "Website Feedback" ? <ExternalLink aria-hidden="true" size={13} /> : null}
+                {label === "Website Feedback" ? (
+                  <ExternalLink aria-hidden="true" size={13} />
+                ) : null}
               </a>
             ))}
           </nav>
-          <a className="footer-to-top" href="#top" aria-label="Back to top">
-            <ArrowUp aria-hidden="true" />
-          </a>
         </div>
       </div>
     </footer>

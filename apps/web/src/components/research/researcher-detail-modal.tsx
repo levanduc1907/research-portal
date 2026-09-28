@@ -1,8 +1,17 @@
 "use client";
 
 import React from "react";
-import { X, ExternalLink, Mail, BookOpen, Quote, Award, Tag } from "lucide-react";
+import {
+  X,
+  ExternalLink,
+  Mail,
+  BookOpen,
+  Quote,
+  Award,
+  Tag,
+} from "lucide-react";
 import { ResearcherDto } from "@repo/contracts";
+import { getProfileLinkMetadata } from "../../lib/profile-link";
 
 interface ResearcherDetailModalProps {
   researcher: ResearcherDto | null;
@@ -16,6 +25,10 @@ export function ResearcherDetailModal({
   onSelectKeyword,
 }: ResearcherDetailModalProps) {
   if (!researcher) return null;
+
+  const profileLink = researcher.profileUrl
+    ? getProfileLinkMetadata(researcher.profileUrl)
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#13294B]/70 p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -126,14 +139,14 @@ export function ResearcherDetailModal({
           </div>
 
           <div className="flex items-center gap-3">
-            {researcher.profileUrl && (
+            {researcher.profileUrl && profileLink && (
               <a
                 href={researcher.profileUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg bg-[#FF5F05] px-4 py-2 text-xs font-bold text-white hover:bg-[#E84A27] transition-all shadow-md shadow-orange-950/20"
               >
-                <span>Illinois Profile</span>
+                <span>{profileLink.label}</span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
             )}

@@ -1,12 +1,12 @@
 "use client";
 import Link from "next/link";
-import { Search, ArrowUpRight } from "lucide-react";
 import type { ResearcherDto } from "@repo/contracts";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { researchApi } from "../../lib/research-api";
 import { DEFAULT_RESEARCHERS_RESULT } from "../../lib/sample-researchers";
 import { DepartmentFilter } from "./department-filter";
+import { ResearcherSearch } from "./researcher-search";
 
 export function ResearcherAvatar({
   researcher,
@@ -105,15 +105,7 @@ export function ResearcherDirectory(): React.JSX.Element {
           </div>
         </div>
         <div className="directory-filters">
-          <label className="search-field">
-            <Search size={19} />
-            <input
-              aria-label="Search researchers"
-              placeholder="Search names or keywords"
-              value={searchQuery}
-              onChange={(e) => updateSearch(e.target.value)}
-            />
-          </label>
+          <ResearcherSearch value={searchQuery} onChange={updateSearch} />
           <DepartmentFilter
             value={selectedDepartment}
             onChange={updateDepartment}
@@ -129,7 +121,6 @@ export function ResearcherDirectory(): React.JSX.Element {
               >
                 <div className="card-top">
                   <ResearcherAvatar researcher={r} />
-                  <ArrowUpRight size={19} />
                 </div>
                 <h3>{r.name.replace(/^Dr\. /, "")}</h3>
                 <p className="researcher-title">{r.title || "Researcher"}</p>

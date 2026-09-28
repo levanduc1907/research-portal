@@ -43,7 +43,14 @@ export function UniversityOverview(): React.JSX.Element {
         </div>
         <div>
           <p>
-            Illinois students and scholars make significant and lasting contributions toward a better future. Our transformative learning experiences, in and out of the classroom, are designed to produce alumni who strive to better understand and address society’s most pressing challenges. And our historical foundation of pioneering research since our founding in 1867 means that the university produces countless innovations that continue to shape our modern world.
+            Illinois students and scholars make significant and lasting
+            contributions toward a better future. Our transformative learning
+            experiences, in and out of the classroom, are designed to produce
+            alumni who strive to better understand and address society’s most
+            pressing challenges. And our historical foundation of pioneering
+            research since our founding in 1867 means that the university
+            produces countless innovations that continue to shape our modern
+            world.
           </p>
           <a
             className="university-link"
@@ -55,37 +62,38 @@ export function UniversityOverview(): React.JSX.Element {
           </a>
         </div>
       </div>
-      <dl
-        ref={factsRef}
-        className={`university-facts${factsVisible ? " is-visible" : ""}`}
+      <div
+        className={`university-facts-band${factsVisible ? " is-visible" : ""}`}
       >
-        <div>
-          <dt>Students</dt>
-          <dd>
-            60,000<span>+</span>
-          </dd>
-          <p>A community of learners</p>
-        </div>
-        <div>
-          <dt>Nobel Prizes</dt>
-          <dd>25</dd>
-          <p>A tradition of discovery</p>
-        </div>
-        <div>
-          <dt>Research centers, labs & institutes</dt>
-          <dd>
-            150<span>+</span>
-          </dd>
-          <p>Ideas across disciplines</p>
-        </div>
-        <div>
-          <dt>Research expenditures</dt>
-          <dd>
-            $865<span>M</span>
-          </dd>
-          <p>Fiscal year 2025</p>
-        </div>
-      </dl>
+        <dl ref={factsRef} className="portal-container university-facts">
+          <div>
+            <dt>Students</dt>
+            <dd>
+              60,000<span>+</span>
+            </dd>
+            <p>A community of learners</p>
+          </div>
+          <div>
+            <dt>Nobel Prizes</dt>
+            <dd>25</dd>
+            <p>A tradition of discovery</p>
+          </div>
+          <div>
+            <dt>Research centers, labs & institutes</dt>
+            <dd>
+              150<span>+</span>
+            </dd>
+            <p>Ideas across disciplines</p>
+          </div>
+          <div>
+            <dt>Research expenditures</dt>
+            <dd>
+              $865<span>M</span>
+            </dd>
+            <p>Fiscal year 2025</p>
+          </div>
+        </dl>
+      </div>
       <div className="facts-source">
         University facts ·{" "}
         <a href="https://illinois.edu/about/" target="_blank" rel="noreferrer">

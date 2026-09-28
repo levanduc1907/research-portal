@@ -10,6 +10,7 @@ import { Header } from "../../../components/research/header";
 import { Footer } from "../../../components/research/footer";
 import { AiAssistant } from "../../../components/research/ai-assistant";
 import { ResearcherAvatar } from "../../../components/research/researcher-directory";
+import { getProfileLinkMetadata } from "../../../lib/profile-link";
 import { researchApi } from "../../../lib/research-api";
 import { DEFAULT_RESEARCHERS_RESULT } from "../../../lib/sample-researchers";
 
@@ -63,6 +64,9 @@ export default function ResearcherPage({
 
   const researcher: ResearcherDto | null =
     researcherQuery.data ?? sampleResearcher;
+  const profileLink = researcher?.profileUrl
+    ? getProfileLinkMetadata(researcher.profileUrl)
+    : null;
 
   useEffect(() => {
     if (researcher?.slug && researcher.slug !== slug) {
@@ -110,11 +114,19 @@ export default function ResearcherPage({
                   <p>{researcher.title || "Researcher"}</p>
                 </section>
                 <section className="profile-panel">
-                  <h2>Affiliation</h2>
-                  <p>University of Illinois Urbana-Champaign</p>
-                  <strong>
-                    {researcher.department || "Department not listed"}
-                  </strong>
+                  <h2>Academic appointment</h2>
+                  <dl className="profile-appointment">
+                    <div>
+                      <dt>Institution</dt>
+                      <dd>University of Illinois Urbana-Champaign</dd>
+                    </div>
+                    {researcher.department && (
+                      <div>
+                        <dt>Department</dt>
+                        <dd>{researcher.department}</dd>
+                      </div>
+                    )}
+                  </dl>
                 </section>
                 {researcher.bio && (
                   <section className="profile-panel">
@@ -132,14 +144,14 @@ export default function ResearcherPage({
                       {researcher.email}
                     </a>
                   )}
-                  {researcher.profileUrl && (
+                  {researcher.profileUrl && profileLink && (
                     <a
                       className="contact-link"
                       href={researcher.profileUrl}
                       target="_blank"
                       rel="noreferrer"
                     >
-                      University profile ↗
+                      {profileLink.label} ↗
                     </a>
                   )}
                   {!researcher.email && !researcher.profileUrl && (
@@ -209,8 +221,9 @@ export default function ResearcherPage({
                     </div>
                     {portalPaperCount !== undefined && (
                       <span className="publication-count">
-                        {portalPaperCount.toLocaleString()}{" "}
-                        {debouncedPaperSearch ? "results" : "indexed"}
+                        {debouncedPaperSearch
+                          ? `${portalPaperCount.toLocaleString()} result${portalPaperCount === 1 ? "" : "s"}`
+                          : `${portalPaperCount.toLocaleString()} indexed`}
                       </span>
                     )}
                   </div>
@@ -248,9 +261,7 @@ export default function ResearcherPage({
                     <span aria-live="polite">
                       {papersQuery.isFetching && !papersQuery.isPending
                         ? "Searching…"
-                        : debouncedPaperSearch && portalPaperCount !== undefined
-                          ? `${portalPaperCount.toLocaleString()} matching publication${portalPaperCount === 1 ? "" : "s"}`
-                          : ""}
+                        : ""}
                     </span>
                   </div>
 
@@ -351,28 +362,6 @@ export default function ResearcherPage({
                         ? `No publications match “${debouncedPaperSearch}”.`
                         : "No publications have been linked to this researcher yet."}
                     </div>
-                  )}
-                </section>
-
-                <section className="profile-panel">
-                  <h2>Academic background</h2>
-                  <p>
-                    Visit the university profile for professional experience,
-                    appointments, and additional academic information.
-                  </p>
-                  {researcher.profileUrl ? (
-                    <a
-                      className="text-link"
-                      href={researcher.profileUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      Explore university profile ↗
-                    </a>
-                  ) : (
-                    <p className="profile-muted">
-                      A university profile link is not available.
-                    </p>
                   )}
                 </section>
               </div>

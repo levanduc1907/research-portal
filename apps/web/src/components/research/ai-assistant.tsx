@@ -15,7 +15,7 @@ import type { ChatCitationDto, ChatStreamStatus } from "@repo/contracts";
 import { Button } from "@repo/ui/components/ui/button";
 import { Input } from "@repo/ui/components/ui/input";
 import { researchApi } from "../../lib/research-api";
-import { BlockILogo } from "./illinois-logo";
+import { AssistantMessageContent } from "./assistant-message-content";
 
 interface Message {
   id: string;
@@ -52,6 +52,23 @@ const CONVERSATION_STORAGE_KEY = "uiuc-research-assistant-conversation-v1";
 const MAX_PERSISTED_MESSAGES = 50;
 const MAX_PERSISTED_MESSAGE_LENGTH = 20_000;
 const MAX_PERSISTED_SOURCES = 10;
+
+function hasValidSourceCitation(message: Message): boolean {
+  if (!message.sources || message.sources.length === 0) return false;
+  const citationMatches = message.text.match(/\[(\d+(?:\s*[,;]\s*\d+)*)\]/g);
+  if (!citationMatches) return false;
+
+  const citedNumbers = new Set<number>();
+  for (const match of citationMatches) {
+    const raw = match.slice(1, -1);
+    const nums = raw.split(/[,;]/).map((n) => parseInt(n.trim(), 10));
+    for (const num of nums) {
+      if (!Number.isNaN(num)) citedNumbers.add(num);
+    }
+  }
+
+  return message.sources.some((_, index) => citedNumbers.has(index + 1));
+}
 
 function isConversationId(value: unknown): value is string {
   return typeof value === "string" && /^[a-zA-Z0-9_-]{1,100}$/.test(value);
@@ -147,13 +164,17 @@ function loadStoredConversation(): StoredConversation | null {
 
 export function AiAssistant(): React.JSX.Element {
   const [isOpen, setIsOpen] = useState(false);
+  const [isPanelMounted, setIsPanelMounted] = useState(false);
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
   const [hasRestoredConversation, setHasRestoredConversation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const conversationIdRef = useRef<string>("");
+  const closeTimerRef = useRef<number | null>(null);
+  const shouldRestoreTriggerFocusRef = useRef(false);
 
   useEffect(() => {
     const storedConversation = loadStoredConversation();
@@ -202,9 +223,64 @@ export function AiAssistant(): React.JSX.Element {
   useEffect(
     () => () => {
       abortControllerRef.current?.abort();
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+      }
     },
     [],
   );
+
+  useEffect(() => {
+    if (!isPanelMounted && shouldRestoreTriggerFocusRef.current) {
+      shouldRestoreTriggerFocusRef.current = false;
+      triggerRef.current?.focus();
+    }
+  }, [isPanelMounted]);
+
+  const openAssistant = (): void => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsPanelMounted(true);
+    setIsOpen(true);
+  };
+
+  const finishMinimizing = (): void => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsPanelMounted(false);
+  };
+
+  const minimizeAssistant = (): void => {
+    shouldRestoreTriggerFocusRef.current = true;
+    setIsOpen(false);
+
+    const reducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    closeTimerRef.current = window.setTimeout(
+      finishMinimizing,
+      reducedMotion ? 0 : 320,
+    );
+  };
+
+  const handleCitationClick = (
+    messageId: string,
+    citationNumber: number,
+  ): void => {
+    const targetId = `source-${messageId}-${citationNumber}`;
+    const el = document.getElementById(targetId);
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      el.classList.add("is-highlighted");
+      window.setTimeout(() => {
+        el.classList.remove("is-highlighted");
+      }, 2000);
+    }
+  };
 
   const stopStreaming = (): void => {
     abortControllerRef.current?.abort();
@@ -334,16 +410,17 @@ export function AiAssistant(): React.JSX.Element {
 
   return (
     <aside className="assistant-shell">
-      {!isOpen && (
+      {!isPanelMounted && (
         <Button
+          ref={triggerRef}
           type="button"
           className="assistant-trigger"
-          onClick={() => setIsOpen(true)}
-          aria-expanded="false"
+          onClick={openAssistant}
+          aria-expanded={isOpen}
           aria-controls="research-assistant-panel"
         >
           <span className="assistant-trigger-mark" aria-hidden="true">
-            <BlockILogo withOutline={false} />
+            <Bot />
           </span>
           <span>
             <small>Illinois Research</small>
@@ -353,12 +430,21 @@ export function AiAssistant(): React.JSX.Element {
         </Button>
       )}
 
-      {isOpen && (
+      {isPanelMounted && (
         <section
           id="research-assistant-panel"
           className="assistant-panel"
+          data-state={isOpen ? "open" : "closed"}
           role="dialog"
           aria-label="Illinois research assistant"
+          onAnimationEnd={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              event.animationName === "assistant-exit"
+            ) {
+              finishMinimizing();
+            }
+          }}
         >
           <header className="assistant-header">
             <div className="assistant-identity">
@@ -379,6 +465,8 @@ export function AiAssistant(): React.JSX.Element {
                 size="icon"
                 onClick={clearConversation}
                 aria-label="Clear conversation"
+                title="Clear conversation"
+                className="assistant-btn-clear"
               >
                 <RotateCcw aria-hidden="true" />
               </Button>
@@ -386,9 +474,10 @@ export function AiAssistant(): React.JSX.Element {
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => setIsOpen(false)}
+                onClick={minimizeAssistant}
                 aria-label="Minimize research assistant"
                 title="Minimize"
+                className="assistant-btn-minimize"
               >
                 <Minus aria-hidden="true" />
               </Button>
@@ -416,7 +505,7 @@ export function AiAssistant(): React.JSX.Element {
                     </span>
                   )}
                   <div className="assistant-message-body">
-                    <p>
+                    <div className="assistant-message-bubble">
                       {isWaitingForFirstToken ? (
                         <span className="assistant-thinking">
                           Thinking
@@ -429,16 +518,28 @@ export function AiAssistant(): React.JSX.Element {
                             <i />
                           </span>
                         </span>
+                      ) : message.sender === "assistant" ? (
+                        <AssistantMessageContent
+                          messageId={message.id}
+                          text={visibleText}
+                          sources={message.sources}
+                          isStreaming={message.phase === "generating"}
+                          onCitationClick={(citationNumber) =>
+                            handleCitationClick(message.id, citationNumber)
+                          }
+                        />
                       ) : (
                         visibleText
                       )}
-                      {message.phase === "generating" && message.text && (
-                        <span
-                          className="assistant-stream-cursor"
-                          aria-hidden="true"
-                        />
-                      )}
-                    </p>
+                      {message.phase === "generating" &&
+                        message.text &&
+                        message.sender === "user" && (
+                          <span
+                            className="assistant-stream-cursor"
+                            aria-hidden="true"
+                          />
+                        )}
+                    </div>
                     {message.phase === "error" && message.errorMessage && (
                       <p className="assistant-message-error">
                         {message.errorMessage}
@@ -449,40 +550,56 @@ export function AiAssistant(): React.JSX.Element {
                         Reference: {message.requestId}
                       </span>
                     )}
-                    {!!message.sources?.length && !message.isStreaming && (
-                      <div className="assistant-sources">
-                        <h3>
-                          <BookOpen aria-hidden="true" /> Sources
-                        </h3>
-                        <ol>
-                          {message.sources.map((source) => (
-                            <li key={source.paperId}>
-                              <div>
-                                <strong>{source.title}</strong>
-                                <span>
-                                  {source.year} · {source.citedByCount}{" "}
-                                  citations
-                                </span>
-                              </div>
-                              {source.doi && (
-                                <a
-                                  href={
-                                    source.doi.startsWith("http")
-                                      ? source.doi
-                                      : `https://doi.org/${source.doi}`
-                                  }
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  aria-label={`Open source: ${source.title}`}
+                    {hasValidSourceCitation(message) &&
+                      !message.isStreaming && (
+                        <div className="assistant-sources">
+                          <h3>
+                            <BookOpen aria-hidden="true" /> Sources
+                          </h3>
+                          <ol>
+                            {message.sources?.map((source, index) => {
+                              const citationNum = index + 1;
+                              const sourceId = `source-${message.id}-${citationNum}`;
+                              return (
+                                <li
+                                  key={source.paperId}
+                                  id={sourceId}
+                                  className="assistant-source-item"
                                 >
-                                  <ExternalLink aria-hidden="true" />
-                                </a>
-                              )}
-                            </li>
-                          ))}
-                        </ol>
-                      </div>
-                    )}
+                                  <span
+                                    className="assistant-source-num"
+                                    aria-label={`Source [${citationNum}]`}
+                                  >
+                                    [{citationNum}]
+                                  </span>
+                                  <div className="assistant-source-details">
+                                    <strong>{source.title}</strong>
+                                    <span>
+                                      {source.year} ·{" "}
+                                      {source.citedByCount.toLocaleString()}{" "}
+                                      citations
+                                    </span>
+                                  </div>
+                                  {source.doi && (
+                                    <a
+                                      href={
+                                        source.doi.startsWith("http")
+                                          ? source.doi
+                                          : `https://doi.org/${source.doi}`
+                                      }
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      aria-label={`Open source: ${source.title}`}
+                                    >
+                                      <ExternalLink aria-hidden="true" />
+                                    </a>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ol>
+                        </div>
+                      )}
                   </div>
                 </article>
               );
