@@ -1,170 +1,240 @@
-# UIUC Research Portal — System Architecture and Data Processing Report
+# UIUC Research Portal System Architecture
 
-Last reviewed: 27 September 2026
+Last reviewed: 28 September 2026
 
-## 1. Document purpose
+## 1. Purpose and scope
 
-This document describes the implemented architecture of the UIUC Research Portal, including:
+This document describes the implemented architecture of the UIUC Research Portal. It is intended as a technical reference for reports, demonstrations, maintenance, and deployment planning.
 
-- the monorepo and runtime structure;
-- the purpose of each application and module;
+It covers:
+
+- the monorepo and runtime applications;
 - the relational and vector data models;
-- the OpenAlex acquisition, identity resolution, normalization, and reconciliation processes;
-- the local embedding and Qdrant synchronization queue;
-- the evidence-grounded LLM chat flow;
-- rate limiting, abuse prevention, credential protection, resilience, and scaling controls;
-- known limitations and the current ingestion status.
+- OpenAlex acquisition, normalization, identity resolution, and reconciliation;
+- local embedding generation and Qdrant synchronization;
+- the intent-classification, tool-execution, and LLM response pipeline;
+- browser and server conversation persistence;
+- provider fallback, traffic admission, rate limiting, and security controls;
+- operational commands, data invariants, limitations, and completion criteria.
 
-The document distinguishes the intended architecture from the current operational state. It should not be interpreted as a claim that every background data job has completed.
+The document deliberately separates architecture from operational state. A feature may be implemented even while its background synchronization job is incomplete.
 
-## 2. Current operational status
+## 2. Current operational snapshot
 
-Snapshot taken on 27 September 2026:
+The following values were read directly from MySQL and Qdrant on 28 September 2026.
 
-| Metric                                   | Current value | Interpretation                                                                 |
-| ---------------------------------------- | ------------: | ------------------------------------------------------------------------------ |
-| Researchers                              |           999 | Curated faculty/researcher profiles in MySQL                                   |
-| Researchers linked to an OpenAlex Author |           941 | Profiles that can currently resolve publications through `Researcher.authorId` |
-| Researchers still missing an Author      |            58 | Require remote OpenAlex resolution after quota reset or manual review          |
-| Authors                                  |       185,944 | All bibliographic authors and co-authors, not only UIUC researchers            |
-| Papers                                   |        81,376 | Canonical paper records currently stored in MySQL                              |
-| Embeddings completed                     |        62,802 | Papers represented in Qdrant                                                   |
-| Embeddings processing                    |           100 | Papers currently claimed by a vector worker                                    |
-| Embeddings pending                       |        18,474 | Papers waiting for local embedding and Qdrant upsert                           |
+| Metric                         |       Current value | Meaning                                                                     |
+| ------------------------------ | ------------------: | --------------------------------------------------------------------------- |
+| Institution records for UIUC   |                   1 | Current OpenAlex institution profile is stored in MySQL                     |
+| OpenAlex institution works     |             338,931 | Institution-level OpenAlex metric, not the local paper count                |
+| OpenAlex institution citations |          33,374,522 | Institution-level OpenAlex cited-by metric                                  |
+| Researchers                    |                 999 | Curated portal researcher profiles                                          |
+| Researchers linked to Authors  |                 988 | Profiles with a canonical `Researcher.authorId`                             |
+| Researchers without Authors    |                  11 | Explicitly unresolved profiles; automatic guessing is intentionally avoided |
+| Authors                        |             263,035 | All normalized bibliographic authors and co-authors                         |
+| Papers                         |             147,810 | Canonical paper records in MySQL                                            |
+| Topics                         |               4,305 | Normalized OpenAlex topics                                                  |
+| Embeddings completed           |             141,480 | MySQL ledger rows successfully synchronized to Qdrant                       |
+| Embeddings pending             |               6,330 | Papers waiting for local embedding and Qdrant upsert                        |
+| Qdrant points                  |             141,480 | Matches the completed embedding ledger                                      |
+| Qdrant collection              | `uiuc_papers_e5_v1` | 384-dimensional cosine collection, status green                             |
 
-The most recent author/paper backfill stopped because the configured OpenAlex key exhausted its daily budget. The key had used 9,999 of 10,000 daily credits. The remaining 58 researchers and the complete 999-researcher paper reconciliation must resume after the budget resets or another funded key is configured.
+The latest full `openalex_researcher_works` import run is still marked `FAILED`. It persisted 123,992 fetched works before OpenAlex returned HTTP 429. The system must therefore not claim that every researcher publication set is fully reconciled, even though the stored dataset and vector index are usable.
 
-The vector worker is independent of the OpenAlex quota. It can continue embedding paper records already stored in MySQL.
+## 3. Architectural principles
 
-## 3. System context
+The implementation follows these rules:
+
+1. **MySQL is canonical.** Qdrant is a derived semantic index and can be rebuilt.
+2. **Researcher and Author are different entities.** A curated faculty profile is not the same as a bibliographic identity.
+3. **Identity resolution may remain unresolved.** Ambiguity is recorded instead of forcing a potentially incorrect match.
+4. **Imports are idempotent and resumable.** OpenAlex IDs, unique relations, and `ImportRun` checkpoints prevent duplicate data and allow recovery.
+5. **Vector synchronization is explicit.** `EmbeddingRecord` is both the queue and synchronization ledger.
+6. **LLMs do not receive database access.** The model classifies a request and generates the final response; deterministic application code selects and executes allowlisted tools.
+7. **Structured facts and semantic evidence are separate.** Counts and metadata come from MySQL; conceptual paper retrieval comes from Qdrant.
+8. **Sources are evidence-derived.** A response without relevant paper evidence must not display unrelated citations.
+9. **Expensive work is rejected early.** Validation, rate limits, and concurrency leases execute before vector search or provider calls.
+10. **Secrets never leave the API.** Provider keys are encrypted at rest and only decrypted for an outbound provider attempt.
+
+## 4. System context
 
 ```mermaid
 flowchart LR
-    User[Research portal user]
+    User[Portal user]
     Admin[Credential administrator]
     OpenAlex[OpenAlex API]
-    Provider[Gemini / OpenAI / compatible LLM]
+    LLM[Gemini, OpenAI, or compatible provider]
 
     subgraph Portal[Research Portal Monorepo]
-        Web[Next.js Web Application]
+        Web[Next.js Web]
         API[NestJS API]
         Worker[NestJS Worker]
-        Contracts[Shared Contracts]
-        OpenAlexPackage[OpenAlex Client and Mappers]
-        Embeddings[Local Multilingual E5]
+        Contracts[Shared contracts]
+        OAClient[OpenAlex client and mappers]
+        E5[Local multilingual E5]
     end
 
-    subgraph Data[Private Data Services]
+    subgraph Data[Private data services]
         MySQL[(MySQL)]
         Redis[(Redis)]
         Qdrant[(Qdrant)]
     end
 
     User -->|HTTPS| Web
-    Admin -->|Protected admin API| Web
+    Admin -->|Protected admin UI| Web
     Web -->|REST and SSE| API
-    API --> MySQL
-    API --> Redis
-    API -->|Semantic search| Qdrant
-    API -->|Stream grounded prompt| Provider
 
-    OpenAlex -->|Authors, works, topics| OpenAlexPackage
-    OpenAlexPackage --> Worker
-    Worker -->|Normalized records| MySQL
-    Worker --> Embeddings
-    Embeddings -->|384-dimensional vectors| Qdrant
+    API -->|Prisma queries| MySQL
+    API -->|Rate limits, leases, cache| Redis
+    API -->|Vector similarity search| Qdrant
+    API -->|Classification and streamed generation| LLM
+    API -->|Query embedding| E5
 
-    Contracts -. shared DTOs .-> Web
-    Contracts -. shared DTOs .-> API
+    Worker --> OAClient
+    OAClient -->|Authenticated HTTPS| OpenAlex
+    Worker -->|Normalized records and job state| MySQL
+    Worker -->|Document embedding| E5
+    Worker -->|Point upsert| Qdrant
+
+    Contracts -. DTOs and stream events .-> Web
+    Contracts -. DTOs and stream events .-> API
 ```
 
-## 4. Repository structure
+## 5. Repository structure
 
-| Path                  | Technology                                     | Responsibility                                                                                                                        |
-| --------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web`            | Next.js App Router, React 19, TanStack Query   | Public UI, researcher directory, profiles, department combobox, paper presentation, SSE assistant, and AI credential administration   |
-| `apps/api`            | NestJS                                         | REST API, validation, security admission, analytics, structured queries, vector retrieval, conversation processing, and LLM streaming |
-| `apps/worker`         | NestJS application context                     | OpenAlex imports, researcher-author linking, full paper reconciliation, local embedding, and Qdrant synchronization                   |
-| `packages/database`   | Prisma and MySQL                               | Relational schema, generated client, migrations, and connection adapter                                                               |
-| `packages/contracts`  | TypeScript                                     | Shared API DTOs, pagination types, chat chunks, citations, and provider credential contracts                                          |
-| `packages/openalex`   | TypeScript                                     | OpenAlex HTTP client, API retries, author/work mapping, abstract reconstruction, and department inference                             |
-| `packages/embeddings` | Transformers.js-compatible local model wrapper | Shared document and query embeddings using multilingual E5                                                                            |
-| `packages/ui`         | shadcn/ui and Base UI                          | Shared accessible interface primitives, including the combobox                                                                        |
-| `docker`              | Docker Compose                                 | Local MySQL, Redis, Qdrant, and optional administrative tools                                                                         |
+| Path                  | Technology                                   | Responsibility                                                                                                                                                       |
+| --------------------- | -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web`            | Next.js App Router, React 19, TanStack Query | Public portal, institution overview, searchable researcher directory, researcher profiles, paper presentation, persistent SSE assistant, and provider administration |
+| `apps/api`            | NestJS                                       | REST/SSE boundary, validation, security, structured retrieval, semantic retrieval, conversation orchestration, provider adapters, and encrypted credentials          |
+| `apps/worker`         | NestJS application context                   | Institution sync, OpenAlex imports, researcher identity linking, complete author-work scans, metric reconciliation, local embeddings, and Qdrant synchronization     |
+| `packages/database`   | Prisma, MariaDB adapter, MySQL               | Schema, generated client, seed data, migrations, and shared database utilities                                                                                       |
+| `packages/contracts`  | TypeScript                                   | Shared DTOs, pagination types, chat events, citations, and provider credential contracts                                                                             |
+| `packages/openalex`   | TypeScript                                   | OpenAlex authentication, URL construction, retries, cursor pagination, normalization, and abstract reconstruction                                                    |
+| `packages/embeddings` | Transformers.js compatible runtime           | Shared local `Xenova/multilingual-e5-small` document and query embeddings                                                                                            |
+| `packages/ui`         | Shared React components                      | Accessible reusable UI primitives including the combobox                                                                                                             |
+| `docker`              | Docker Compose                               | Local MySQL, Redis, Qdrant, and optional administration tools                                                                                                        |
 
-## 5. Runtime architecture
+## 6. Runtime component map
 
-### 5.1 Web application modules
+```mermaid
+flowchart TB
+    subgraph Browser[Browser]
+        Home[Homepage sections]
+        Directory[Researcher directory]
+        Profile[Researcher profile]
+        Assistant[AI assistant]
+        LocalState[(Versioned localStorage)]
+        QueryCache[TanStack Query cache]
+    end
 
-| Module or component                   | Purpose                                                                                                                                                             |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app/page.tsx`                        | Composition-only homepage. It does not own the state of every feature.                                                                                              |
-| `ResearcherDirectory`                 | Owns researcher query, department selection, pagination, and TanStack Query state.                                                                                  |
-| `DepartmentFilter`                    | Searchable Base UI/shadcn combobox. It queries the backend, debounces input by 300 ms, cancels stale requests, and supports clear/select behavior.                  |
-| Researcher profile page and modal     | Load curated profile metadata and paginated papers through the linked Author.                                                                                       |
-| Paper explorer and paper detail modal | Present paper metadata, authors, topic, abstract, DOI, landing URL, year, and citations.                                                                            |
-| Analytics and overview components     | Present institution totals, publication trends, and topic trends.                                                                                                   |
-| `AiAssistant`                         | Maintains a conversation UUID, displays `Thinking` before the first token, consumes SSE, supports stop/reset/minimize, and renders citations and correlated errors. |
-| `researchApi`                         | Typed browser client for REST and SSE endpoints; includes the signed anonymous session cookie.                                                                      |
-| `QueryProvider`                       | Supplies TanStack Query and separates server state from component-local UI state.                                                                                   |
-| AI credential administration page     | Creates, updates, tests, activates, and selects encrypted provider configurations through protected endpoints.                                                      |
+    subgraph API[NestJS API]
+        Boundary[Validation and request identity]
+        Security[Rate limit and concurrency admission]
+        ResearcherAPI[Researcher module]
+        PaperAPI[Paper module]
+        AnalyticsAPI[Analytics module]
+        InstitutionAPI[Institution module]
+        Chat[Chat orchestrator]
+        Classifier[Intent classifier]
+        Selector[Deterministic tool selector]
+        Executor[Allowlisted tool executor]
+        Generator[Response generator]
+        Providers[AI credential and provider adapters]
+        VectorSearch[Vector search service]
+    end
 
-### 5.2 API modules
+    subgraph Worker[Worker process]
+        InstitutionSync[Institution profile sync]
+        FacultyImport[Faculty import]
+        Identity[Researcher-Author resolution]
+        WorkBackfill[Author works backfill]
+        Metrics[Researcher metric reconciliation]
+        EmbedQueue[Embedding poller]
+    end
 
-| Module       | Purpose                                                                                                                                            | Main endpoints or behavior                                   |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| Database     | Owns the Prisma connection lifecycle and exposes MySQL access.                                                                                     | Internal service                                             |
-| Institution  | Returns the UIUC institution profile and aggregate metadata.                                                                                       | `GET /v1/institution`                                        |
-| Analytics    | Computes publication totals, citation totals, yearly trends, and topic trends.                                                                     | `GET /v1/stats`, `/v1/trends`, `/v1/topics`                  |
-| Papers       | Searches, filters, sorts, paginates, and resolves detailed papers.                                                                                 | `GET /v1/papers`, `/v1/papers/:id`                           |
-| Researchers  | Searches profiles, returns searchable departments, resolves profiles, and lists author-linked papers.                                              | `GET /v1/researchers`, `/departments`, `/:id`, `/:id/papers` |
-| Vector       | Embeds a query locally and searches the Qdrant paper collection.                                                                                   | Internal retrieval service                                   |
-| Chat         | Loads conversation history, resolves follow-ups, routes questions, retrieves evidence, builds grounded prompts, streams responses, and logs turns. | `POST /v1/chat`, `/v1/chat/stream`                           |
-| AI Providers | Manages the encrypted provider vault and Gemini, OpenAI, and OpenAI-compatible adapters.                                                           | `/v1/admin/ai-credentials`                                   |
-| Security     | Applies global rate limits, client identity, distributed concurrency admission, and public response caching.                                       | Global guard and interceptor                                 |
-| Health       | Supports deployment and health checks.                                                                                                             | Health endpoint                                              |
-| Chat Gateway | Legacy Socket.IO collaboration events for team rooms and notes. It is separate from the research-assistant SSE endpoint.                           | WebSocket events                                             |
+    Home --> QueryCache
+    Directory --> QueryCache
+    Profile --> QueryCache
+    Assistant <--> LocalState
 
-### 5.3 Worker modules
+    QueryCache --> Boundary
+    Assistant -->|SSE| Boundary
+    Boundary --> Security
+    Security --> ResearcherAPI
+    Security --> PaperAPI
+    Security --> AnalyticsAPI
+    Security --> InstitutionAPI
+    Security --> Chat
 
-| Module                     | Purpose                                                                                                                                                 |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OpenAlexImportService`    | Imports papers and faculty, resolves missing OpenAlex identities, reconciles every author work, normalizes relations, and creates vector queue records. |
-| `PaperEmbeddingService`    | Enqueues missing embeddings, recovers stale jobs, embeds batches, writes Qdrant points, and records completion or failure.                              |
-| `EmbeddingProviderService` | Provides the local multilingual E5 document/query embedding implementation. No paid embedding API is required.                                          |
-| `QdrantService`            | Creates and validates the cosine collection and performs synchronous point upserts.                                                                     |
-| Worker bootstrap           | Runs finite CLI commands or starts the long-running vector synchronization poller.                                                                      |
+    Chat --> Classifier --> Selector --> Executor
+    Executor --> VectorSearch
+    Chat --> Generator --> Providers
 
-### 5.4 Shared packages
+    InstitutionSync --> WorkBackfill
+    FacultyImport --> Identity --> WorkBackfill --> Metrics
+    WorkBackfill --> EmbedQueue
+```
 
-| Package            | Purpose                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------ |
-| `@repo/contracts`  | Prevents API/web contract drift by sharing DTOs and stream event types.                    |
-| `@repo/database`   | Provides Prisma models, generated types, and the MariaDB adapter.                          |
-| `@repo/openalex`   | Centralizes URL construction, API-key handling, retries, pagination, and normalization.    |
-| `@repo/embeddings` | Ensures the API and worker use the same model, dimensions, and E5 query/document prefixes. |
-| `@repo/ui`         | Ensures shared accessible UI behavior and visual consistency.                              |
+### 6.1 Web modules
 
-## 6. Data architecture
+| Component                 | Responsibility                                                                                                                             |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `app/page.tsx`            | Composition-only homepage; feature state is owned by child components                                                                      |
+| `ResearcherDirectory`     | Researcher query, pagination, department selection, and TanStack Query lifecycle                                                           |
+| `ResearcherSearch`        | Plain debounced text search; topic aliases are expanded only by the backend                                                                |
+| `DepartmentFilter`        | Searchable combobox backed by the department endpoint                                                                                      |
+| Researcher profile route  | Slug-based routing, profile metadata, activity totals, title search, paginated publications, and external-profile labeling                 |
+| `UniversityOverview`      | Institution introduction, full-bleed statistics band, and campus links                                                                     |
+| `AiAssistant`             | Persistent conversation state, minimize/open animation, thinking state, SSE streaming, cancellation, error rendering, and citation display |
+| `AssistantMessageContent` | Safe lightweight formatting for bold text, inline code, headings, and list items without executing arbitrary HTML                          |
+| `researchApi`             | Typed REST/SSE browser client                                                                                                              |
+| `QueryProvider`           | TanStack Query provider for server state                                                                                                   |
 
-### 6.1 Relational model summary
+### 6.2 API modules
 
-| Model               | Primary identity                      | Purpose                                                                                                    | Important relationships                                                      |
-| ------------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| `Institution`       | UUID and unique `openalexId`          | Stores UIUC identity, URLs, geography, counts, citation indices, and summary statistics.                   | Standalone institutional reference                                           |
-| `Researcher`        | UUID                                  | Curated portal profile: name, email, department, title, biography, profile/photo URLs, and summary counts. | Optional one-to-one `Author`; one-to-many `ResearcherKeyword`                |
-| `Author`            | UUID and unique `openalexId`          | Canonical bibliographic identity from OpenAlex.                                                            | Optional one-to-one `Researcher`; many-to-many `Paper` through `PaperAuthor` |
-| `Paper`             | UUID and unique `openalexId`          | Stores title, DOI, publication date/year, citations, abstract, URLs, and primary topic.                    | Many-to-many Authors and Topics; optional one-to-one `EmbeddingRecord`       |
-| `PaperAuthor`       | UUID and unique `(paperId, authorId)` | Stores authorship, position, and corresponding-author status.                                              | Join table between Paper and Author                                          |
-| `Topic`             | UUID and unique `openalexId`          | Stores OpenAlex topic, subfield, field, domain, and work count.                                            | Many-to-many Paper; one-to-many primary papers                               |
-| `PaperTopic`        | UUID and unique `(paperId, topicId)`  | Stores topic score and primary-topic flag.                                                                 | Join table between Paper and Topic                                           |
-| `ResearcherKeyword` | UUID                                  | Stores curated or imported researcher keywords.                                                            | Many-to-one Researcher                                                       |
-| `ImportRun`         | UUID                                  | Stores source, status, cursor/checkpoint, totals, errors, and timestamps for resumable imports.            | Operational state                                                            |
-| `EmbeddingRecord`   | UUID and unique `paperId`             | Stores model/version, SHA-256 content hash, Qdrant point ID, status, and errors.                           | One-to-one Paper; vector queue source of truth                               |
-| `ChatRequest`       | UUID                                  | Stores scoped conversation ID, query, route, response, citations, latency, and timestamp.                  | Conversation history and observability log                                   |
-| `AiCredential`      | UUID and unique name                  | Stores provider configuration and AES-GCM encrypted API key material.                                      | Default credential selected during generation                                |
+| Module       | Responsibility                                                                                                   | Primary endpoints                                                |
+| ------------ | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Database     | Prisma connection lifecycle                                                                                      | Internal                                                         |
+| Institution  | Current UIUC identity, geography, and OpenAlex metrics with a safe fallback                                      | `GET /v1/institution`                                            |
+| Analytics    | Totals and publication/topic trends                                                                              | `GET /v1/stats`, `/v1/trends`, `/v1/topics`                      |
+| Researchers  | Search, topic-alias expansion, departments, slug resolution, and paginated author-linked papers                  | `GET /v1/researchers`, `/departments`, `/:slug`, `/:slug/papers` |
+| Papers       | Search, filters, sorting, pagination, and paper details                                                          | `GET /v1/papers`, `/:id`                                         |
+| Vector       | Local query embedding and Qdrant retrieval                                                                       | Internal                                                         |
+| Chat         | History loading, classification, tool orchestration, evidence merging, response generation, SSE, and persistence | `POST /v1/chat`, `/v1/chat/stream`                               |
+| AI Providers | Encrypted credential vault, provider adapters, ordered fallback, cooldown, and circuit breaker                   | `/v1/admin/ai-credentials`                                       |
+| Security     | Session identity, IP hashing, validation, rate limits, distributed leases, headers, and caching                  | Global guards/interceptors                                       |
+| Health       | Liveness and readiness                                                                                           | `/health`, `/health/live`, `/health/ready`                       |
 
-### 6.2 Entity relationship diagram
+### 6.3 Worker modules
+
+| Component                  | Responsibility                                                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `OpenAlexImportService`    | Institution sync, paper/faculty import, Author resolution, complete work scans, normalization, reconciliation, and embedding enqueue |
+| `PaperEmbeddingService`    | Discovers pending work, claims bounded batches, recovers stale processing rows, embeds documents, and records success/failure        |
+| `EmbeddingProviderService` | Loads and caches the local multilingual E5 model                                                                                     |
+| `QdrantService`            | Creates/validates the collection and upserts points                                                                                  |
+| Worker bootstrap           | Dispatches finite CLI jobs or starts the scheduled vector poller                                                                     |
+
+## 7. Data architecture
+
+### 7.1 Relational model summary
+
+| Model               | Purpose                                                                                                | Important constraints                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
+| `Institution`       | UIUC identity, geography, URLs, OpenAlex totals, h-index, i10-index, and summary statistics            | Unique `openalexId`                                                       |
+| `Researcher`        | Curated portal profile with name, slug, email, department, title, biography, links, and summary counts | Unique slug, optional unique `authorId`, transitional unique `openalexId` |
+| `Author`            | Canonical OpenAlex bibliographic identity                                                              | Unique `openalexId`                                                       |
+| `Paper`             | Canonical scholarly work and metadata                                                                  | Unique `openalexId`; optional primary topic                               |
+| `PaperAuthor`       | Authorship relation, position, and corresponding status                                                | Unique `(paperId, authorId)`                                              |
+| `Topic`             | OpenAlex topic hierarchy                                                                               | Unique `openalexId`                                                       |
+| `PaperTopic`        | Scored paper-topic assignment                                                                          | Unique `(paperId, topicId)`                                               |
+| `ResearcherKeyword` | Searchable researcher expertise terms                                                                  | Indexed researcher and keyword                                            |
+| `ImportRun`         | Resumable job status, cursor, counters, and error                                                      | Indexed source/status/update time                                         |
+| `EmbeddingRecord`   | Vector queue and synchronization ledger                                                                | Unique `paperId`; indexed status/hash                                     |
+| `ChatRequest`       | Scoped conversation turn, route, response, sources, and latency                                        | Indexed conversation/time                                                 |
+| `AiCredential`      | Encrypted provider key and model configuration                                                         | Unique name; indexed provider/default flags                               |
+
+### 7.2 Entity relationship diagram
 
 ```mermaid
 erDiagram
@@ -172,13 +242,16 @@ erDiagram
         string id PK
         string openalex_id UK
         string display_name
+        string homepage_url
+        json geo
         int works_count
         int cited_by_count
-        json summary_stats
+        int h_index
     }
 
     RESEARCHER {
         string id PK
+        string slug UK
         string author_id FK, UK
         string openalex_id UK
         string name
@@ -193,6 +266,7 @@ erDiagram
         string openalex_id UK
         text display_name
         string orcid
+        string institution
     }
 
     PAPER {
@@ -242,6 +316,7 @@ erDiagram
         string id PK
         string paper_id FK, UK
         string model
+        string embedding_version
         string content_hash
         string qdrant_point_id
         enum status
@@ -268,197 +343,185 @@ erDiagram
 
     AI_CREDENTIAL {
         string id PK
-        string name UK
         string provider
         longtext encrypted_api_key
         string default_model
+        boolean is_active
         boolean is_default
     }
 
-    RESEARCHER o|--|| AUTHOR : "optionally linked to"
+    RESEARCHER o|--|| AUTHOR : resolves_to
     RESEARCHER ||--o{ RESEARCHER_KEYWORD : has
-    AUTHOR ||--o{ PAPER_AUTHOR : has
-    PAPER ||--o{ PAPER_AUTHOR : has
+    AUTHOR ||--o{ PAPER_AUTHOR : writes
+    PAPER ||--o{ PAPER_AUTHOR : credits
     PAPER ||--o{ PAPER_TOPIC : classified_by
     TOPIC ||--o{ PAPER_TOPIC : classifies
-    TOPIC o|--o{ PAPER : primary_topic
+    TOPIC o|--o{ PAPER : primary_for
     PAPER ||--o| EMBEDDING_RECORD : queued_as
 ```
 
-### 6.3 Why Researcher and Author are separate
+### 7.3 Why Researcher and Author are separate
 
-`Researcher` and `Author` represent different domains:
+`Researcher` belongs to the portal domain. It stores a curated profile, slug, email, appointment, department, biography, and UI links.
 
-- `Researcher` is a curated portal/faculty profile. It owns department, title, biography, email, profile URL, and photo URL.
-- `Author` is the canonical scholarly identity used by OpenAlex authorships.
-- A researcher reaches publications through `Researcher.authorId -> Author.id -> PaperAuthor -> Paper`.
-- `Researcher.openalexId` is transitional compatibility data. `Researcher.authorId` is the relational link used by profile and chat queries.
-- The database contains many more Authors than Researchers because every co-author is normalized.
+`Author` belongs to the bibliographic domain. It stores the canonical OpenAlex scholarly identity used in paper authorships.
 
-This separation prevents faculty profile fields from being duplicated across every publication authorship and allows non-UIUC co-authors to remain valid bibliographic entities.
+The publication path is:
 
-## 7. Data acquisition and storage flow
-
-### 7.1 End-to-end ingestion flow
-
-```mermaid
-flowchart TD
-    Start([Start import command])
-    SourceChoice{Input source}
-    CSV[Faculty CSV or TSV]
-    Existing[Existing Researcher rows]
-    OAAuthors[OpenAlex Authors API]
-
-    Parse[Parse and validate profile fields]
-    UpsertResearcher[Upsert Researcher and keywords]
-    Resolve[Resolve canonical OpenAlex Author]
-    Ambiguous{Unique high-confidence match?}
-    Unresolved[Keep authorId null and record unresolved case]
-    Link[Upsert Author and set Researcher.authorId]
-
-    FetchWorks[Fetch all works with cursor pagination]
-    Normalize[Normalize paper, topic, and authorship payload]
-    UpsertPaper[Upsert Paper by unique OpenAlex ID]
-    UpsertGraph[Upsert Author, Topic, PaperAuthor, and PaperTopic]
-    ForceRelation[Ensure requesting canonical Author is linked to every filtered work]
-    Reconcile[Remove stale PaperAuthor relations absent from current OpenAlex work set]
-    Verify{Local linked count equals OpenAlex meta.count?}
-    Fail[Mark ImportRun FAILED and retain checkpoint]
-    Hash[Build title + primary topic + abstract and calculate SHA-256]
-    Queue[Create or reset EmbeddingRecord to PENDING]
-    Checkpoint[Persist researcher ID, works cursor, totals, and status]
-    Complete([Mark ImportRun COMPLETED])
-
-    Start --> SourceChoice
-    SourceChoice --> CSV
-    SourceChoice --> Existing
-    SourceChoice --> OAAuthors
-    CSV --> Parse --> UpsertResearcher
-    Existing --> Resolve
-    OAAuthors --> UpsertResearcher
-    UpsertResearcher --> Resolve
-    Resolve --> Ambiguous
-    Ambiguous -->|No| Unresolved --> Checkpoint
-    Ambiguous -->|Yes| Link --> FetchWorks
-    FetchWorks --> Normalize --> UpsertPaper --> UpsertGraph --> ForceRelation --> Reconcile --> Verify
-    Verify -->|No| Fail
-    Verify -->|Yes| Hash --> Queue --> Checkpoint
-    Checkpoint -->|More researchers| Resolve
-    Checkpoint -->|Finished| Complete
+```text
+Researcher.authorId
+  -> Author.id
+  -> PaperAuthor.authorId
+  -> PaperAuthor.paperId
+  -> Paper.id
 ```
 
-### 7.2 OpenAlex API behavior
+This separation allows the database to retain hundreds of thousands of co-authors without pretending each one is a curated UIUC researcher. `Researcher.openalexId` remains for transitional compatibility, but application relations use `Researcher.authorId`.
 
-- Every request includes `OPENALEX_API_KEY` as the `api_key` query parameter.
-- `mailto` and a descriptive user agent are also included.
-- Cursor pagination is used for deep result sets.
-- `per_page` is capped at 100 to minimize credit usage.
-- HTTP 429 and 5xx responses are retried with exponential backoff.
-- A long `Retry-After` response stops the job rather than busy-looping and consuming resources.
-- `ImportRun.cursor` makes interrupted work resumable.
+## 8. OpenAlex data acquisition
 
-OpenAlex charges search queries more heavily than ordinary list/singleton requests. The pipeline therefore performs local exact/fuzzy matching before remote author search.
+### 8.1 Institution synchronization
 
-## 8. Researcher identity resolution
+The institution record is synchronized independently from papers and researchers.
 
-### 8.1 Resolution strategy
+```mermaid
+sequenceDiagram
+    participant CLI as Worker command
+    participant OA as OpenAlex Institution API
+    participant W as OpenAlexImportService
+    participant DB as MySQL
+
+    CLI->>W: syncInstitutionProfile(I157725225)
+    W->>OA: GET /institutions/I157725225?api_key=...
+    OA-->>W: identity, ROR, geo, counts, summary_stats
+    W->>W: Normalize optional fields
+    W->>DB: Upsert Institution by openalexId
+    DB-->>W: Persisted current profile
+```
+
+Run it directly with:
+
+```bash
+pnpm --filter worker sync:institution
+```
+
+`import:phase2` also invokes the institution sync. The API `InstitutionService` contains a stable fallback for identity/location so chat and the public institution endpoint remain useful if the row is temporarily absent.
+
+### 8.2 End-to-end researcher and paper ingestion
 
 ```mermaid
 flowchart TD
-    R[Researcher without a confirmed Author]
-    Stored{Stored Author or OpenAlex ID exists?}
-    FetchStored[Fetch singleton Author by ID]
-    VerifyStored[Compare primary and alternative names]
-    LocalExact[Find unique exact normalized name in local Author table]
-    LocalFuzzy[Find unique high-confidence local surname candidate]
-    Variants[Generate name variants]
-    UIUCSearch[Search OpenAlex authors with UIUC affiliation]
-    EmailSearch[Search using email local-part-derived tokens]
-    WorkByline[Search UIUC works by raw author name]
-    GlobalSearch[Global author search requiring independent email signal]
-    Collision{Already linked to another Researcher?}
+    Start([Start worker command])
+    Source{Researcher source}
+    CSV[CSV or TSV faculty data]
+    Existing[Existing Researcher rows]
+    OAAuthors[OpenAlex author results]
+
+    Parse[Validate and normalize profile]
+    UpsertR[Upsert Researcher, slug, and keywords]
+    Resolve[Resolve canonical OpenAlex Author]
+    Safe{Unique high-confidence candidate?}
+    Unresolved[Keep authorId null and record reason]
+    Link[Upsert Author and link Researcher.authorId]
+
+    Fetch[Fetch every Author work with cursor pagination]
+    Map[Map work, abstract, authorships, and topics]
+    UpsertP[Upsert Paper by openalexId]
+    Graph[Upsert Authors, Topics, PaperAuthor, and PaperTopic]
+    Canonical[Ensure requesting Author relation exists]
+    Queue[Create or reset EmbeddingRecord]
+    Reconcile[Remove stale Author-paper relations]
+    Verify{Local relation count equals OpenAlex meta.count?}
+    Save[Persist ImportRun checkpoint]
+    Failed([Mark run FAILED with resumable cursor])
+    Done([Mark run COMPLETED])
+
+    Start --> Source
+    Source --> CSV --> Parse --> UpsertR
+    Source --> Existing --> Resolve
+    Source --> OAAuthors --> UpsertR
+    UpsertR --> Resolve
+    Resolve --> Safe
+    Safe -->|No| Unresolved --> Save
+    Safe -->|Yes| Link --> Fetch --> Map --> UpsertP --> Graph --> Canonical --> Queue
+    Queue --> Reconcile --> Verify
+    Verify -->|No| Failed
+    Verify -->|Yes| Save
+    Save -->|More researchers| Resolve
+    Save -->|All processed| Done
+```
+
+### 8.3 OpenAlex client behavior
+
+- `OPENALEX_API_KEY` is sent as the `api_key` query parameter.
+- `mailto` and a descriptive user agent identify the application.
+- Cursor pagination avoids page-number depth limits.
+- Page size is capped at 100.
+- HTTP 429 and 5xx responses use bounded retry/backoff.
+- A long `Retry-After` or exhausted daily budget stops the job rather than busy-looping.
+- The current cursor and totals are saved in `ImportRun`.
+- Singletons and filtered list queries are preferred over repeated remote search when an ID is already known.
+
+## 9. Researcher identity resolution
+
+### 9.1 Resolution flow
+
+```mermaid
+flowchart TD
+    R[Researcher without confirmed Author]
+    Stored{Stored Author/OpenAlex ID?}
+    Singleton[Fetch Author singleton]
+    Verify[Compare primary and alternative names]
+    LocalExact[Unique exact normalized local Author]
+    LocalFuzzy[Unique strict local surname candidate]
+    Variants[Generate safe name variants]
+    UIUC[Search authors with UIUC affiliation]
+    Email[Use email local-part as supporting signal]
+    Byline[Search UIUC work bylines]
+    Global[Global Author search with independent evidence]
+    Collision{Author already owned by another Researcher?}
     Accept[Upsert Author and link Researcher]
     Reject[Leave unresolved for manual review]
 
     R --> Stored
-    Stored -->|Yes| FetchStored --> VerifyStored
-    VerifyStored -->|High confidence| Collision
-    VerifyStored -->|Weak or conflicting| LocalExact
+    Stored -->|Yes| Singleton --> Verify
+    Verify -->|Strong| Collision
+    Verify -->|Weak/conflicting| LocalExact
     Stored -->|No| LocalExact
     LocalExact -->|Unique| Collision
-    LocalExact -->|No unique match| LocalFuzzy
+    LocalExact -->|No| LocalFuzzy
     LocalFuzzy -->|Unique strict match| Collision
-    LocalFuzzy -->|No safe match| Variants
-    Variants --> UIUCSearch
-    UIUCSearch -->|Unique| Collision
-    UIUCSearch -->|No unique match| EmailSearch
-    EmailSearch -->|Unique| Collision
-    EmailSearch -->|No unique match| WorkByline
-    WorkByline -->|Unique repeated byline| Collision
-    WorkByline -->|No unique match| GlobalSearch
-    GlobalSearch -->|Unique and email-supported| Collision
-    GlobalSearch -->|No safe match| Reject
+    LocalFuzzy -->|No safe match| Variants --> UIUC
+    UIUC -->|Unique| Collision
+    UIUC -->|No| Email
+    Email -->|Unique| Collision
+    Email -->|No| Byline
+    Byline -->|Unique repeated identity| Collision
+    Byline -->|No| Global
+    Global -->|Unique and independently supported| Collision
+    Global -->|Ambiguous| Reject
     Collision -->|No conflict| Accept
-    Collision -->|Already owned| Reject
+    Collision -->|Already linked| Reject
 ```
 
-### 8.2 Name normalization and scoring
+### 9.2 Name normalization rules
 
-The name matcher applies the following normalization rules:
+1. Normalize Unicode with NFKD and remove diacritic differences for comparison.
+2. Remove honorifics such as `Dr` and `Prof`.
+3. Normalize punctuation and repeated whitespace.
+4. Prefer exact normalized full-name matches.
+5. Accept reordered identical token sets.
+6. Treat a full middle name and the same initial as compatible.
+7. Allow omitted middle names only with uniqueness or supporting evidence.
+8. Reject explicit conflicting middle initials.
+9. Use email local-part similarity only as supporting evidence.
+10. Reject tied top candidates instead of guessing.
 
-1. Unicode NFKD normalization removes accent differences for comparison.
-2. Honorifics such as `Dr` and `Prof` are removed.
-3. Punctuation and repeated whitespace are normalized.
-4. Exact normalized names receive the highest score.
-5. Reordered-but-identical token sets are recognized.
-6. Full middle names and matching initials are treated as compatible.
-7. An omitted middle name is allowed only with additional evidence or a unique result.
-8. Explicitly conflicting middle initials are rejected, even if an alternative name omits the middle name.
-9. Email local-part similarity provides independent supporting evidence.
-10. Equal top scores are treated as ambiguous rather than guessed.
+The resolver can handle forms such as `Amy Jaye Wagoner Johnson` versus `Amy J. Wagoner Johnson`, and `Theresa Ann Saxton-Fox` versus `Theresa Saxton-Fox`. It cannot guarantee a 100% automatic match rate without authoritative ORCID or institutional directory identifiers.
 
-Generated remote-search variants include:
+## 10. Complete paper reconciliation
 
-- the original database name;
-- middle names converted to initials;
-- individual middle names removed;
-- first-name plus last-name fallback;
-- normalized punctuation-free text.
-
-Examples verified against live data:
-
-| Database profile         | OpenAlex author        | Result                                                      |
-| ------------------------ | ---------------------- | ----------------------------------------------------------- |
-| Amy Jaye Wagoner Johnson | Amy J. Wagoner Johnson | Linked to `A5041859359`; 194/194 works reconciled           |
-| Theresa Ann Saxton-Fox   | Theresa Saxton-Fox     | Linked to `A5060116296`; 59/59 works reconciled             |
-| Sameh H Tawfick          | Sameh Tawfick          | Linked to `A5036247243`; increased from 66 to 208/208 works |
-
-### 8.3 Safety rules
-
-- The resolver never chooses between candidates with equal confidence.
-- One OpenAlex Author cannot be linked to two Researcher records.
-- A stored ID is re-evaluated when its name confidence is weak.
-- A higher-confidence candidate can replace a previously stored incorrect mapping.
-- Explicit middle-name conflicts invalidate a candidate.
-- Remaining ambiguous profiles stay unresolved for manual review.
-
-A 100% automatic match rate cannot be guaranteed without authoritative identifiers such as ORCID or a manually verified institutional directory mapping. Guessing would be more damaging than leaving an explicit unresolved state.
-
-## 9. Full paper reconciliation
-
-The researcher paper job does not trust an old local count as proof of completeness.
-
-For each resolved OpenAlex Author, it performs the following steps:
-
-1. Fetch every OpenAlex work using `authorships.author.id:<authorId>` and cursor pagination.
-2. Persist every returned work idempotently.
-3. Normalize all authors, topics, paper-topic links, and paper-author links.
-4. Ensure the canonical requesting Author is related to each returned paper, even when OpenAlex's filtered response omits that Author from a large or merged authorship array.
-5. Collect the complete returned OpenAlex work ID set.
-6. Remove stale `PaperAuthor` rows for that Author when their papers are no longer in the current OpenAlex set.
-7. Count the final local relations.
-8. Require the final count to equal `response.meta.count` exactly.
-9. Only then mark that researcher checkpoint complete.
+For each linked Author, the backfill job scans the full OpenAlex work set rather than trusting a previously stored count.
 
 ```mermaid
 sequenceDiagram
@@ -466,316 +529,361 @@ sequenceDiagram
     participant OA as OpenAlex Works API
     participant DB as MySQL
 
-    W->>OA: GET works filter author.id, cursor=*
+    W->>OA: GET works filtered by authorships.author.id, cursor=*
     OA-->>W: results, meta.count, next_cursor
-    loop Until next_cursor is empty
-        W->>DB: Upsert Paper by openalexId
-        W->>DB: Upsert Authors and Topics
+
+    loop Until next_cursor is null
+        W->>DB: Upsert Paper
+        W->>DB: Upsert all Authors and Topics
         W->>DB: Upsert PaperAuthor and PaperTopic
-        W->>DB: Ensure canonical Author relation
-        W->>DB: Mark new or changed embedding PENDING
-        W->>DB: Save ImportRun cursor and counters
+        W->>DB: Ensure canonical requesting Author relation
+        W->>DB: Mark new/changed embedding PENDING
+        W->>DB: Save cursor and counters
         W->>OA: GET next cursor
         OA-->>W: next page
     end
-    W->>DB: Delete stale relations not in fetched ID set
-    W->>DB: Count canonical Author paper relations
-    alt Local count equals OpenAlex meta.count
+
+    W->>DB: Delete stale relations absent from fetched work IDs
+    W->>DB: Count linked papers for canonical Author
+
+    alt Count equals OpenAlex meta.count
         W->>DB: Mark researcher checkpoint complete
-    else Count differs
-        W->>DB: Mark ImportRun failed with exact mismatch
+    else Count differs or API fails
+        W->>DB: Mark ImportRun FAILED and preserve checkpoint
     end
 ```
 
-Only the join relation is removed during reconciliation. The Paper record itself remains if it is still referenced by another Author.
+Only the stale `PaperAuthor` relation is removed. A `Paper` remains when other authors or application records still reference it.
 
-## 10. Vector synchronization queue
+## 11. Vector synchronization
 
-### 10.1 Queue record lifecycle
-
-`EmbeddingRecord` is the durable MySQL queue and synchronization ledger.
+### 11.1 Queue and ledger lifecycle
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING: New paper or no embedding record
-    COMPLETED --> PENDING: Title, primary topic, abstract, or model changed
-    FAILED --> PROCESSING: Retry failed enabled
+    [*] --> PENDING: New paper or missing ledger
+    COMPLETED --> PENDING: Content hash or model changes
+    FAILED --> PROCESSING: Manual retry-failed
     PENDING --> PROCESSING: Worker claims bounded batch
-    PROCESSING --> COMPLETED: Local embedding and Qdrant upsert succeed
+    PROCESSING --> COMPLETED: Embedding and Qdrant upsert succeed
     PROCESSING --> FAILED: Model or Qdrant operation fails
-    PROCESSING --> PENDING: Stale lease recovery after interrupted worker
+    PROCESSING --> PENDING: Stale lease recovery
     COMPLETED --> [*]
 ```
 
-### 10.2 Content and change detection
+### 11.2 Embedded content
 
-The embedded document contains:
+The document embedding input is:
 
 ```text
 Title: <paper title>
-Primary topic: <topic name>
-Abstract: <abstract text>
+Primary topic: <topic display name>
+Abstract: <abstract or empty text>
 ```
 
-The content is capped at 24,000 characters. A SHA-256 `contentHash` is stored in MySQL. If a re-import changes the title, primary topic, or abstract, the record returns to `PENDING`.
+The content is capped and hashed with SHA-256. Changes to title, primary topic, abstract, model, or embedding version return a completed row to `PENDING`.
 
-### 10.3 Worker polling behavior
+### 11.3 Model and collection contract
 
-- Long-running worker mode starts a synchronization immediately.
-- It polls every `VECTOR_SYNC_INTERVAL_MS`; the default is 60,000 ms.
-- The minimum interval is 10 seconds.
-- The default scheduled batch is 50 and the hard maximum is 200.
-- `syncRunning` prevents overlapping polls in one worker process.
-- `PROCESSING` records older than the greater of two polling intervals or ten minutes are returned to `PENDING`.
-- `--retry-failed` includes failed rows in a manual retry.
-- New papers without an `EmbeddingRecord` are discovered and enqueued.
-- Completed records created by a different embedding model are returned to `PENDING`.
+| Setting         | Value                          |
+| --------------- | ------------------------------ |
+| Model           | `Xenova/multilingual-e5-small` |
+| Dimensions      | 384                            |
+| Distance        | Cosine                         |
+| Collection      | `uiuc_papers_e5_v1`            |
+| Point ID        | Local Paper UUID               |
+| Query prefix    | E5 query mode                  |
+| Document prefix | E5 passage/document mode       |
 
-### 10.4 Local embedding and Qdrant
+Each point payload contains paper identity, title, abstract, publication year, citation count, DOI/landing URL, primary topic, and author names.
 
-| Setting     | Default                        |
-| ----------- | ------------------------------ |
-| Model       | `Xenova/multilingual-e5-small` |
-| Dimensions  | 384                            |
-| Similarity  | Cosine                         |
-| Collection  | `uiuc_papers_e5_v1`            |
-| Model cache | `.cache/models`                |
+### 11.4 Polling behavior
 
-The API embeds queries with the same model and dimension as the worker embeds documents. E5 query/document modes are kept distinct.
+- Long-running worker mode starts a sync immediately.
+- Default poll interval is 60 seconds through `VECTOR_SYNC_INTERVAL_MS`.
+- Minimum interval is 10 seconds.
+- Default batch size is 50; the hard maximum is 200.
+- A process-level lock prevents overlapping polls.
+- Stale `PROCESSING` rows return to `PENDING`.
+- `--retry-failed` includes failed records during manual draining.
+- Completed rows created by another embedding model are re-queued.
 
-Each Qdrant point uses the local Paper UUID as its point ID and stores a payload containing:
+## 12. Chat and LLM architecture
 
-- Paper ID and OpenAlex ID;
-- title and abstract;
-- publication year;
-- citation count;
-- DOI and landing page URL;
-- primary topic;
-- author display names.
+### 12.1 Processing model
 
-MySQL remains the canonical source. Qdrant is a derived index that can be rebuilt from `Paper` and `EmbeddingRecord` state.
+The current flow is:
 
-## 11. LLM chat processing flow
+```text
+Message
+  -> Intent Classification and Entity Extraction
+  -> Deterministic Tool Selection
+  -> Allowlisted Tool Execution
+  -> Evidence and Fact Merge
+  -> Response Generation
+  -> SSE Delivery and Persistence
+```
 
-### 11.1 Routing modes
+This is an internal tool layer, not unrestricted provider function calling. The classification model cannot submit SQL, choose an arbitrary service, or execute code. It returns validated JSON from a closed schema. Application code maps that schema to allowlisted tools.
 
-| Route         | Use case                                                                                                   |
-| ------------- | ---------------------------------------------------------------------------------------------------------- |
-| `STRUCTURED`  | Counts, researcher profiles, newest/oldest/most-cited papers, deterministic filters, and direct follow-ups |
-| `SEMANTIC`    | Conceptual questions requiring similarity search over titles, topics, and abstracts                        |
-| `HYBRID`      | Questions that need both relational facts and semantic paper evidence                                      |
-| `UNSUPPORTED` | Questions outside the available research data scope                                                        |
+### 12.2 Retrieval routes
 
-### 11.2 Detailed chat sequence
+| Route         | Meaning                                                                 |
+| ------------- | ----------------------------------------------------------------------- |
+| `STRUCTURED`  | MySQL counts, profiles, metadata, rankings, filters, and trends         |
+| `SEMANTIC`    | Qdrant similarity search over paper embeddings                          |
+| `HYBRID`      | Both structured facts and semantic paper evidence                       |
+| `UNSUPPORTED` | Question is outside UIUC researcher/publication/topic/institution scope |
+
+### 12.3 Intent families
+
+| Family      | Examples                                                                                                              |
+| ----------- | --------------------------------------------------------------------------------------------------------------------- |
+| Researcher  | Profile, contact, affiliation, research areas, work/citation counts, publications, coauthors, yearly activity         |
+| Paper       | Details, summary, authors, citations, topics, links, and related papers                                               |
+| Topic       | Overview, papers, researchers, and topic trends                                                                       |
+| Department  | Overview, researchers, publications, and trends                                                                       |
+| Institution | Identity, location, overview, main research areas, totals, growth areas, top/recent publications, and top researchers |
+| Discovery   | Semantic and hybrid publication discovery                                                                             |
+
+`INSTITUTION_RESEARCH_AREAS` and `RESEARCH_TRENDS` are intentionally distinct:
+
+- main research areas are ranked by locally indexed primary-topic field volume;
+- growing areas compare publication counts between time windows.
+
+### 12.4 Allowlisted tools
+
+| Tool                                   | Data source               | Purpose                                                    |
+| -------------------------------------- | ------------------------- | ---------------------------------------------------------- |
+| `get_researcher_profile`               | MySQL                     | Profile, contact, affiliation, metrics, and inferred areas |
+| `count_researcher_publications`        | MySQL                     | Exact Author-linked counts with optional filters           |
+| `list_researcher_publications`         | MySQL                     | Latest, oldest, recent, or most-cited papers               |
+| `analyze_research_trends`              | MySQL                     | Institution-wide primary-topic growth                      |
+| `list_top_publications`                | MySQL                     | Institution-wide top/recent works                          |
+| `find_researchers_by_topic`            | MySQL                     | Researchers connected to a topic                           |
+| `get_paper_details`                    | MySQL                     | Metadata, authors, citations, topics, and URLs             |
+| `list_researcher_coauthors`            | MySQL                     | Frequent collaborators                                     |
+| `analyze_researcher_publication_trend` | MySQL                     | Researcher output by year                                  |
+| `get_institution_overview`             | MySQL and stable fallback | Identity, location, OpenAlex metrics, and local totals     |
+| `get_institution_research_areas`       | MySQL                     | Leading fields by indexed publication volume               |
+| `list_top_researchers`                 | MySQL                     | Productivity/citation rankings                             |
+| `analyze_topic`                        | MySQL                     | Topic overview, papers, and trends                         |
+| `analyze_department`                   | MySQL                     | Department people, papers, and yearly output               |
+| `semantic_search_papers`               | Local E5 and Qdrant       | Conceptual paper retrieval                                 |
+
+### 12.5 Detailed request sequence
 
 ```mermaid
 sequenceDiagram
     actor U as User
     participant UI as Next.js Assistant
-    participant S as Security Layer
-    participant C as ChatService
+    participant SEC as Security Admission
+    participant CHAT as ChatService
     participant DB as MySQL
-    participant E as Local E5
+    participant IC as Intent Classifier
+    participant LLM1 as Classification Provider
+    participant TS as Tool Selector
+    participant TE as Tool Executor
+    participant E5 as Local E5
     participant Q as Qdrant
-    participant L as LLM Provider
+    participant RG as Response Generator
+    participant LLM2 as Generation Provider
 
     U->>UI: Submit question
-    UI->>UI: Append user message and show Thinking
-    UI->>S: POST /v1/chat/stream with conversation UUID
+    UI->>UI: Persist message and show Thinking
+    UI->>SEC: POST /v1/chat/stream
+    SEC->>SEC: Validate body and signed identity
+    SEC->>SEC: Check Redis rate and concurrency limits
 
-    S->>S: Validate body and query length
-    S->>S: Verify or create signed session cookie
-    S->>S: Consume session/user and IP rate limits
-    S->>S: Acquire global and per-client concurrency leases
+    alt Rejected before expensive work
+        SEC-->>UI: 429 or 503, Retry-After, request ID
+        UI-->>U: Correlated error message
+    else Admitted
+        SEC->>CHAT: Scoped conversation ID and AbortSignal
+        CHAT->>DB: Load bounded completed history
+        CHAT->>IC: Current message plus history
+        IC->>LLM1: Closed-schema classification prompt
+        LLM1-->>IC: Intent/entity/filter JSON
+        IC->>IC: Parse, sanitize, and apply deterministic guards
+        Note over IC: Falls back to deterministic classification if provider fails
+        IC-->>TS: Validated classification
+        TS->>TS: Map intent(s) to allowlisted calls
+        TS-->>TE: Maximum four deduplicated tool calls
 
-    alt Request rejected
-        S-->>UI: 429 or 503 with Retry-After and request ID
-        UI-->>U: Display correlated error
-    else Request admitted
-        S->>C: Scoped conversation ID and AbortSignal
-        C->>DB: Load recent successful conversation turns
-        C->>C: Resolve pronouns, researcher references, and source numbers
-        C->>C: Classify STRUCTURED / SEMANTIC / HYBRID / UNSUPPORTED
-
-        alt Structured or hybrid route
-            C->>DB: Query researcher, author, papers, counts, dates, and citations
-            DB-->>C: Structured facts and exact paper evidence
+        par Structured calls
+            TE->>DB: Query facts and exact paper evidence
+            DB-->>TE: Counts, profiles, metadata, rankings
+        and Semantic call when selected
+            TE->>E5: Embed contextualized query
+            E5-->>TE: 384-dimensional vector
+            TE->>Q: Similarity search with optional filters
+            Q-->>TE: Scored paper payloads
         end
 
-        alt Semantic or hybrid route
-            C->>E: Embed contextualized current question
-            E-->>C: 384-dimensional query vector
-            C->>Q: Similarity query with threshold and optional year filter
-            Q-->>C: Relevant paper payloads and scores
-        end
-
-        C->>C: Remove unrelated fallback evidence
-        C->>C: Build grounded prompt with facts, evidence, and bounded history
-        C->>L: Stream generation through selected provider adapter
-        L-->>C: Provider token stream
-        C-->>UI: SSE generating chunks
-        UI-->>U: Replace Thinking with incremental response
-        C-->>UI: Completed event with route and citations
-        C->>DB: Persist ChatRequest, response, citations, route, and latency
-        S->>S: Release capacity leases
+        TE-->>CHAT: Merged facts and deduplicated evidence
+        CHAT->>RG: Question, history, facts, evidence
+        RG->>LLM2: Grounded response prompt
+        LLM2-->>RG: Token stream
+        RG-->>UI: SSE generating chunks
+        UI-->>U: Incremental formatted response
+        CHAT-->>UI: Completed route and relevant sources
+        CHAT->>DB: Persist ChatRequest and latency
+        SEC->>SEC: Release leases on success/error/disconnect
     end
 ```
 
-### 11.3 Conversation context
+### 12.6 Evidence and source rules
 
-- The browser creates one UUID per visible conversation.
-- The browser persists the UUID, messages, citations, and UI-safe error metadata in versioned `localStorage`, so a page reload restores the active conversation.
-- Persistence is bounded to the latest 50 messages, 20,000 characters per message, and 10 citations per message. Stored data is validated before it is rendered again.
-- A stream interrupted by navigation or reload is restored as stopped; it is never presented as if generation were still active.
-- The API prefixes that value with the signed session or authenticated user identity.
-- Recent completed `ChatRequest` records are loaded for the same scoped conversation.
-- Previous answers are used only to resolve references; current database facts and evidence take priority.
-- Previous citations allow questions such as `summarize paper 1`, `what is her newest paper`, or `what does that project discuss` to resolve correctly.
-- Clearing the assistant removes the persisted browser history and creates a new conversation UUID.
+- Database facts do not require fake paper citations.
+- Paper citations are attached only when the generated answer references numbered evidence.
+- A failed entity resolution returns no unrelated global papers.
+- A structured institution answer can complete without paper evidence.
+- Provider prompts distinguish “no paper evidence required” from “no evidence found”.
+- Current facts override statements from prior conversation turns.
 
-### 11.4 Structured retrieval safeguards
+### 12.7 Conversation persistence
 
-- Researcher-specific questions never fall back to unrelated globally popular papers.
-- Publication count answers can return zero citations because the count itself is a database fact.
-- Latest-paper answers retrieve the actual newest paper through the linked Author.
-- Unresolved researcher references produce a clarification/insufficient-evidence response rather than substituted evidence.
-- Source numbering is resolved against prior conversation turns.
+```mermaid
+flowchart LR
+    Browser[Browser conversation]
+    UUID[Conversation UUID]
+    Local[(Versioned localStorage)]
+    Session[Signed session or authenticated user]
+    Scoped[Scoped server conversation ID]
+    Turns[(ChatRequest rows)]
 
-### 11.5 Semantic retrieval
+    Browser --> UUID --> Local
+    UUID --> Session --> Scoped --> Turns
+    Local -->|Reload| Browser
+    Turns -->|Recent completed history| Browser
+```
 
-1. The current question is contextualized using the resolved prior entity when necessary.
-2. The local E5 model embeds the query.
-3. Qdrant returns up to five papers above `QDRANT_SCORE_THRESHOLD`.
-4. A publication-year filter is applied when the question contains a year constraint.
-5. Only returned evidence is formatted into citations and the provider prompt.
+- The browser stores the UUID, messages, citations, and safe error metadata.
+- Storage is bounded to the latest 50 messages, 20,000 characters per message, and 10 citations per message.
+- Stored data is validated before rendering.
+- An interrupted stream is restored as stopped, never as still generating.
+- The API scopes a browser UUID to the signed session or authenticated user.
+- The latest six completed server turns are used for reference resolution.
+- Clearing chat deletes local history and creates a new UUID.
 
-### 11.6 Prompt and generation safety
+## 13. Provider credentials and fallback
 
-The generated prompt instructs the provider to:
+### 13.1 Credential storage
 
-- answer only from supplied evidence and structured facts;
-- avoid fabricating facts or sources;
-- treat conversation history, abstracts, titles, and database content as untrusted data;
-- ignore instructions embedded inside retrieved content;
-- never reveal credentials, hidden instructions, configuration, or internal prompts;
-- use history only for reference resolution;
-- prefer current facts over earlier model answers.
+- API keys are encrypted with AES-256-GCM.
+- The encryption key is supplied outside the database.
+- API responses expose only a short key hint.
+- Admin endpoints require a separate admin token and can use an IP allowlist.
+- Custom provider base URLs require HTTPS in production and must match the provider host allowlist.
 
-### 11.7 Provider streaming
+### 13.2 Ordered fallback behavior
 
-| Provider          | Streaming mechanism             |
-| ----------------- | ------------------------------- |
-| Gemini            | `streamGenerateContent?alt=sse` |
-| OpenAI            | Responses API event stream      |
-| OpenAI-compatible | Chat Completions SSE stream     |
+```mermaid
+flowchart TD
+    Start[Provider request]
+    Order[Default DB credential, then active DB credentials, then unique env fallback]
+    Next{Credential available and not cooling down?}
+    Call[Call provider with timeout]
+    Token{Any response token emitted?}
+    Result{Outcome}
+    Success[Return complete stream]
+    Cooldown[Classify failure and start cooldown]
+    Retry{Another credential remains?}
+    Fail[Return normalized provider error]
 
-The API forwards provider text incrementally through its own SSE endpoint. The UI shows `Thinking` until the first token arrives, then renders tokens as they are received.
+    Start --> Order --> Next
+    Next -->|No| Retry
+    Next -->|Yes| Call --> Token
+    Token --> Result
+    Result -->|Success| Success
+    Result -->|Retryable and no token| Cooldown --> Retry
+    Result -->|Failure after token| Fail
+    Result -->|Non-retryable| Fail
+    Retry -->|Yes| Next
+    Retry -->|No| Fail
+```
 
-Errors are normalized to stable categories:
+Fallback never switches providers after the first output token. This prevents one answer from being assembled from multiple models.
 
-- `AI_NOT_CONFIGURED`;
-- `AI_QUOTA_EXCEEDED`;
-- `AI_AUTH_FAILED`;
-- `AI_MODEL_UNAVAILABLE`;
-- `VECTOR_SEARCH_FAILED`;
-- `AI_PROVIDER_FAILED`;
-- `CHAT_TIMEOUT`;
-- `CHAT_FAILED`.
+| Control                       |     Default |
+| ----------------------------- | ----------: |
+| Classification timeout        |  12 seconds |
+| Overall chat timeout          |  60 seconds |
+| Provider timeout              |  55 seconds |
+| Authentication/quota cooldown | 600 seconds |
+| Transient cooldown            |  30 seconds |
+| Circuit-breaker threshold     |  5 failures |
+| Circuit-breaker cooldown      |  30 seconds |
 
-Every stream receives a request ID so the browser-visible error can be matched to API logs.
+Provider cooldown and circuit-breaker state are currently process-local. A multi-replica production deployment should move this state to Redis.
 
-## 12. Rate limiting and abuse prevention
+## 14. Security, rate limiting, and traffic control
 
-### 12.1 Default policies
-
-| Route class           |                  Default limit | Tracking keys                           | Additional guard                                 |
-| --------------------- | -----------------------------: | --------------------------------------- | ------------------------------------------------ |
-| Public read endpoints |            120 requests/minute | Signed session or user, plus hashed IP  | Redis cache for selected aggregate endpoints     |
-| Department search     |             30 requests/minute | Signed session or user, plus hashed IP  | 300 ms browser debounce and request cancellation |
-| Anonymous chat        |   5 requests/minute and 30/day | Signed anonymous session plus hashed IP | Maximum one active stream per session            |
-| Authenticated chat    | 10 requests/minute and 200/day | User plus hashed IP                     | Maximum two active streams per user              |
-| Admin credential API  |             10 requests/minute | Admin request identity and hashed IP    | Admin token and optional IP allowlist            |
-| Global chat capacity  |             20 active requests | Shared Redis lease                      | Early 503 with `Retry-After`                     |
-
-### 12.2 Distributed enforcement
-
-Redis Lua scripts make rate-limit increments and concurrency admission atomic across API replicas.
+### 14.1 Admission pipeline
 
 ```mermaid
 flowchart LR
     Request[Incoming request]
-    Identity[Signed session or user plus hashed IP]
+    Headers[Security headers and request ID]
+    Validate[DTO validation and body limits]
+    Identity[Signed session/user and hashed IP]
     Rate[Redis atomic rate counters]
-    Capacity[Redis concurrency leases]
-    App[NestJS route handler]
-    Downstream[MySQL / E5 / Qdrant / LLM]
-    Reject429[429 Too Many Requests]
-    Reject503[503 At Capacity]
+    Lease[Redis concurrency lease]
+    Handler[NestJS handler]
+    Dependencies[MySQL, E5, Qdrant, LLM]
+    R429[429 Too Many Requests]
+    R503[503 At Capacity]
 
-    Request --> Identity --> Rate
-    Rate -->|Quota exceeded| Reject429
-    Rate -->|Allowed| Capacity
-    Capacity -->|Client limit exceeded| Reject429
-    Capacity -->|Global saturation| Reject503
-    Capacity -->|Lease acquired| App --> Downstream
-    Downstream -->|Complete, error, timeout, or disconnect| Capacity
-    Capacity -->|Release lease| Request
+    Request --> Headers --> Validate --> Identity --> Rate
+    Rate -->|Exceeded| R429
+    Rate -->|Allowed| Lease
+    Lease -->|Per-client exceeded| R429
+    Lease -->|Global saturated| R503
+    Lease -->|Acquired| Handler --> Dependencies
+    Dependencies -->|Success, error, timeout, disconnect| Lease
+    Lease -->|Release| Request
 ```
 
-Production behavior is fail-closed: if Redis is required and unavailable, the API rejects protected traffic rather than silently disabling protection. Development can use a bounded in-process fallback.
+### 14.2 Default quotas
 
-## 13. Security controls
+| Route class        |               Default | Tracking                          | Additional control                              |
+| ------------------ | --------------------: | --------------------------------- | ----------------------------------------------- |
+| Public reads       |            120/minute | Signed session/user and hashed IP | Short cache on aggregate endpoints              |
+| Department lookup  |             30/minute | Signed session/user and hashed IP | Browser debounce and stale-request cancellation |
+| Anonymous chat     |   5/minute and 30/day | Signed session plus hashed IP     | One active stream per session                   |
+| Authenticated chat | 10/minute and 200/day | User plus hashed IP               | Two active streams per user                     |
+| Admin credentials  |             10/minute | Admin identity and hashed IP      | Admin token and optional IP allowlist           |
+| Global chat        |             20 active | Shared Redis lease                | Early 503 and `Retry-After`                     |
 
-### 13.1 HTTP boundary
+Redis Lua scripts make counter and lease changes atomic across API replicas. Production can fail closed when Redis is required; development may use a bounded process-local fallback.
 
-- Global `ValidationPipe` transforms DTOs, removes unknown fields, rejects non-whitelisted fields, and stops on the first validation error.
-- Chat queries are non-empty strings capped at 2,000 characters.
-- JSON and URL-encoded bodies default to a 16 KB maximum.
-- CORS uses an exact origin allowlist; wildcard origins are rejected.
-- Proxy trust must be an explicit hop count or trusted subnet in production.
+### 14.3 HTTP and application controls
+
+- Global validation transforms known fields, strips unknown fields, and rejects non-whitelisted input.
+- Chat questions are non-empty and capped at 2,000 characters.
+- Request bodies are bounded.
+- CORS uses exact allowed origins.
+- Proxy trust must be an explicit hop count or subnet in production.
 - `X-Powered-By` is disabled.
-- Responses include request IDs.
-- Security headers include content-type protection, frame denial, no-referrer policy, restrictive permissions policy, and a restrictive API content security policy.
 - HSTS is enabled in production.
-- Swagger can be disabled in production.
+- Responses include request IDs and restrictive security headers.
+- Anonymous sessions use an HMAC-SHA256 signed, `HttpOnly`, `SameSite=Lax` cookie.
+- Cookie signature comparisons and admin-token comparisons are timing-safe.
+- IP addresses and user identifiers are hashed before Redis key construction.
+- Browser disconnect and timeout AbortSignals propagate to provider calls.
+- Retrieved titles, abstracts, history, and metadata are treated as untrusted prompt content.
 
-### 13.2 Client identity
+### 14.4 Infrastructure controls
 
-- Anonymous clients receive a random UUID cookie signed with HMAC-SHA256.
-- Cookie signatures use timing-safe comparison.
-- The cookie is `HttpOnly` and `SameSite=Lax` by default.
-- Production cookies are `Secure`.
-- IP addresses and authenticated user IDs are SHA-256 hashed before being used in Redis keys.
-- Conversation IDs are scoped to the signed session or authenticated user.
+- Local MySQL, Redis, Qdrant, Adminer, and Redis Commander bind to `127.0.0.1`.
+- Admin tools require an optional Compose profile.
+- Production data services should remain on a private network.
+- Qdrant supports `QDRANT_API_KEY`.
+- Production should add managed TLS, WAF/DDoS protection, bot controls, and coarse edge rate limits.
 
-### 13.3 AI credential protection
+## 15. Caching and scaling
 
-- Provider keys are encrypted with AES-256-GCM before database persistence.
-- The encryption master key remains outside the database.
-- APIs return only a last-four-character key hint.
-- Admin access requires a separately configured token.
-- Admin-token comparison is timing-safe.
-- An optional IP allowlist can restrict credential administration.
-- Custom provider base URLs must use HTTPS in production.
-- Provider hosts must be explicitly allowlisted, reducing SSRF risk.
-- Provider redirects are rejected.
-
-Any key pasted into chat, terminal output, or another shared channel should be treated as exposed and rotated. Rotation does not reset an account's OpenAlex daily budget.
-
-### 13.4 Provider and request resilience
-
-| Control                   |              Default |
-| ------------------------- | -------------------: |
-| Chat request timeout      |           60 seconds |
-| Provider timeout          |           55 seconds |
-| Circuit-breaker threshold | 5 transient failures |
-| Circuit-breaker cooldown  |           30 seconds |
-
-The AbortSignal propagates browser disconnects and request timeouts to provider calls. This prevents abandoned SSE sessions from continuing to consume capacity or quota.
-
-The circuit breaker recognizes 429 responses, 5xx responses, quota exhaustion, timeouts, fetch failures, and provider unavailability. Its current state is process-local; a multi-replica deployment should move breaker state to Redis.
-
-### 13.5 Public response caching
+### 15.1 Public response cache
 
 | Endpoint          |         TTL |
 | ----------------- | ----------: |
@@ -784,35 +892,76 @@ The circuit breaker recognizes 429 responses, 5xx responses, quota exhaustion, t
 | `/v1/trends`      | 300 seconds |
 | `/v1/topics`      | 300 seconds |
 
-The cache uses Redis when available and a development-only in-memory fallback otherwise. Responses expose `X-Cache: HIT` or `MISS`.
+Redis is used in production. A development-only in-memory fallback is available. Responses expose `X-Cache: HIT` or `MISS`.
 
-### 13.6 Infrastructure exposure
+### 15.2 Horizontal scale
 
-- MySQL, Redis, Qdrant, Adminer, and Redis Commander bind to `127.0.0.1` in local Docker configuration.
-- Adminer and Redis Commander require the optional `tools` Compose profile.
-- Production data services should remain on a private network.
-- Qdrant API-key support is available through `QDRANT_API_KEY`.
+```mermaid
+flowchart TB
+    Edge[CDN, TLS, WAF, load balancer]
+    API1[API replica 1]
+    API2[API replica 2]
+    APIN[API replica N]
+    Redis[(Redis coordination)]
+    MySQL[(MySQL primary)]
+    Qdrant[(Qdrant cluster)]
+    Provider[LLM providers]
+    Workers[Bounded worker pool]
 
-## 14. High-traffic design
+    Edge --> API1
+    Edge --> API2
+    Edge --> APIN
+    API1 --> Redis
+    API2 --> Redis
+    APIN --> Redis
+    API1 --> MySQL
+    API2 --> MySQL
+    APIN --> MySQL
+    API1 --> Qdrant
+    API2 --> Qdrant
+    APIN --> Qdrant
+    API1 --> Provider
+    API2 --> Provider
+    APIN --> Provider
+    Workers --> MySQL
+    Workers --> Qdrant
+```
 
-The current design limits expensive work before it reaches downstream systems:
+The API is mostly stateless because conversation data, rate counters, leases, and canonical records live outside the process. Remaining process-local provider breaker state should be externalized before aggressive horizontal scaling.
 
-1. Edge or load-balancer protection should absorb volumetric attacks.
-2. NestJS validates small bounded requests.
-3. Redis rejects route quota violations.
-4. Redis rejects excessive per-client or global chat concurrency.
-5. Public aggregate endpoints use short shared caches.
-6. MySQL uses indexes for dates, citations, departments, joins, import status, embedding status, and conversation history.
-7. Qdrant search is bounded by result count and score threshold.
-8. Provider calls have timeouts and a circuit breaker.
-9. Client disconnects abort downstream work.
-10. Background vector work uses bounded batches and prevents overlapping polls.
+BullMQ dependencies are present, but OpenAlex imports and vector polling are currently CLI/in-process jobs. A production worker topology should use durable queues, bounded concurrency, retries, dead-letter handling, and monitoring.
 
-For horizontal production scale, the API can be replicated because most coordination state is in Redis and durable data stores. The worker layer should eventually use a durable BullMQ queue with retry policies, dead-letter handling, and worker autoscaling. Although BullMQ dependencies are present, the current import commands and vector poller are CLI/in-process jobs rather than a fully deployed BullMQ topology.
+## 16. Observability
 
-## 15. Operational commands
+Enable detailed local AI-flow tracing with:
 
-### 15.1 Infrastructure and schema
+```env
+CHAT_TRACE_ENABLED=true
+CHAT_TRACE_TOKENS=true
+CHAT_TRACE_MAX_CHARS=100000
+```
+
+Important trace stages include:
+
+| Trace family              | Contents                                                                  |
+| ------------------------- | ------------------------------------------------------------------------- |
+| `request.*`               | Request ID, transport, scoped conversation, failure stage, latency        |
+| `conversation.*`          | Bounded prior turns and sources                                           |
+| `intent_classification.*` | Input, prompt, raw JSON, validated result, fallback reason                |
+| `tool_selection.*`        | Route and allowlisted calls                                               |
+| `tools.*`                 | Call arguments, structured facts, evidence counts, merged result          |
+| `entity_resolution.*`     | Candidate names, scores, ambiguity, selected Author                       |
+| `database.*`              | Query filters and returned structured records                             |
+| `vector.*`                | Query, model, dimensions, Qdrant request/response, mapped evidence        |
+| `provider.*`              | Credential order, provider/model attempt, cooldown, and selected provider |
+| `response_generation.*`   | Grounded prompt, optional tokens, final response                          |
+| `persistence.*`           | Saved `ChatRequest` metadata                                              |
+
+Trace sanitization redacts key-like strings, authorization headers, tokens, passwords, encryption fields, and secrets. Full trace mode can still contain personal or unpublished research data and must remain disabled in production.
+
+## 17. Operational commands
+
+### 17.1 Infrastructure and schema
 
 ```bash
 pnpm docker:up
@@ -820,109 +969,100 @@ pnpm db:generate
 pnpm db:push
 ```
 
-The existing local database was historically created with `db push` and does not contain a complete Prisma migration history. New environments can use the migration files, but the current environment should not run `prisma migrate deploy` until it has been baselined.
+The current local database was historically managed with `db push`. It must be baselined before relying on `prisma migrate deploy` in an existing environment.
 
-### 15.2 Researcher identity
+### 17.2 Institution and researchers
 
 ```bash
-# Link only researchers whose authorId is missing.
+# Refresh current UIUC identity and metrics from OpenAlex.
+pnpm --filter worker sync:institution
+
+# Resolve only researchers missing authorId.
 pnpm --filter worker link:researcher-authors
+
+# Reconcile author-level counts.
+pnpm --filter worker sync:researcher-metrics
+
+# Infer missing departments from available profile/topic evidence.
+pnpm --filter worker backfill:researcher-departments
 ```
 
-This command first attempts local exact and strict fuzzy matches, then uses remote OpenAlex fallbacks for unresolved records.
-
-### 15.3 Paper reconciliation
+### 17.3 Researcher papers
 
 ```bash
-# Resume a failed checkpoint.
+# Resume the latest checkpoint.
 pnpm --filter worker backfill:researcher-papers
 
-# Re-scan all researchers from the beginning.
+# Start the complete scan again.
 pnpm --filter worker backfill:researcher-papers -- --restart
 
-# Repair one researcher.
-pnpm --filter worker backfill:researcher-papers -- --researcher-id=<researcher-uuid> --restart
+# Repair one Researcher UUID.
+pnpm --filter worker backfill:researcher-papers -- --researcher-id=<uuid> --restart
 ```
 
-### 15.4 Vector synchronization
+### 17.4 Vector synchronization
 
 ```bash
-# Drain pending vectors until no rows remain or a batch fails.
+# Drain pending rows.
 pnpm --filter worker sync:vectors
 
-# Include previously failed rows.
+# Include failed rows.
 pnpm --filter worker sync:vectors -- --retry-failed --batch-size=50
-```
 
-Starting the worker without a finite command enables automatic polling:
-
-```bash
+# Start long-running scheduled polling.
 pnpm --filter worker dev
 ```
 
-### 15.5 Verification queries
+## 18. Data integrity invariants
 
-Operational completion should be determined from durable state, not only from process logs:
+| Invariant                             | Enforcement                                                                             |
+| ------------------------------------- | --------------------------------------------------------------------------------------- |
+| One canonical row per OpenAlex entity | Unique OpenAlex ID and idempotent upsert                                                |
+| One Author per Researcher             | Unique nullable `Researcher.authorId`                                                   |
+| No duplicate authorship               | Unique `(paperId, authorId)`                                                            |
+| No duplicate topic assignment         | Unique `(paperId, topicId)`                                                             |
+| Safe researcher identity              | Confidence scoring, tie rejection, middle-name conflict rejection, and collision checks |
+| Complete processed publication set    | Full cursor scan, stale-relation removal, exact `meta.count` verification               |
+| Current institution profile           | Explicit institution sync and API fallback                                              |
+| Vector matches source content         | Content hash plus model/version fields                                                  |
+| Interrupted embedding recovers        | Stale `PROCESSING` rows return to `PENDING`                                             |
+| Completed ledger equals Qdrant points | Operational count verification                                                          |
+| No unrelated chat sources             | Sources selected only from evidence referenced by the response                          |
+| MySQL remains canonical               | Qdrant can be deleted and rebuilt without losing research metadata                      |
 
-- zero unexpected `Researcher.authorId IS NULL` rows;
-- the latest full `openalex_researcher_works` ImportRun is `COMPLETED`;
-- every processed researcher has an exact local/OpenAlex linked-paper count;
-- zero `EmbeddingRecord` rows in `PENDING`, `PROCESSING`, or `FAILED`, unless intentionally queued;
-- Qdrant point count equals the number of completed embedding records;
-- sample researcher profile and contextual chat tests return relevant papers and citations.
+## 19. Known limitations and next steps
 
-## 16. Data integrity invariants
+| Area                    | Current limitation                                           | Next step                                                    |
+| ----------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| Researcher identity     | 11 profiles remain without a safe Author match               | Manual review or authoritative ORCID/directory mapping       |
+| Paper reconciliation    | Latest full job failed on OpenAlex HTTP 429                  | Resume the stored checkpoint with available API budget       |
+| Vector completion       | 6,330 records remain pending                                 | Keep the worker running until the ledger drains              |
+| Durable work scheduling | Imports and vector polling are not fully BullMQ-backed       | Move jobs to queues with retry and dead-letter policies      |
+| Provider breaker state  | Cooldown/circuit state is local to one API process           | Store shared breaker state in Redis                          |
+| End-user authentication | Research portal does not yet enforce institutional SSO       | Add OIDC/SSO and role-based authorization                    |
+| Edge protection         | CDN/WAF configuration is outside this repository             | Deploy behind managed edge protection                        |
+| Migration history       | Existing local schema was not created entirely by migrations | Baseline before production migration deployment              |
+| Secret exposure         | Development keys were shared interactively                   | Rotate them and store replacements only in secret management |
 
-The following rules define a healthy dataset:
+## 20. Completion criteria
 
-| Invariant                                | Enforcement                                                              |
-| ---------------------------------------- | ------------------------------------------------------------------------ |
-| One canonical record per OpenAlex entity | Unique `openalexId` constraints and upserts                              |
-| One Author link per Researcher           | Unique nullable `Researcher.authorId`                                    |
-| No duplicate authorship                  | Unique `(paperId, authorId)`                                             |
-| No duplicate paper-topic assignment      | Unique `(paperId, topicId)`                                              |
-| Full researcher publication set          | Cursor scan, stale relation removal, and exact `meta.count` verification |
-| No unsafe identity guesses               | Tie rejection, collision checks, explicit middle-name conflict rejection |
-| Vector reflects retrieval content        | SHA-256 content hash and model/version tracking                          |
-| Interrupted vector work recovers         | Stale `PROCESSING` rows return to `PENDING`                              |
-| MySQL is canonical                       | Qdrant points are derived and rebuildable                                |
-| Chat citations are evidence-derived      | Sources originate from structured queries or Qdrant payloads             |
+The data layer should be described as fully synchronized only when:
 
-## 17. Known limitations and required next steps
+1. every automatically resolvable Researcher has a verified Author link;
+2. every remaining unresolved identity has an explicit manual-review outcome;
+3. the full researcher-paper job finishes with a `COMPLETED` `ImportRun`;
+4. every processed Author has an exact local/OpenAlex work count;
+5. no unexpected embedding rows remain `PENDING`, `PROCESSING`, or `FAILED`;
+6. Qdrant point count equals completed embedding rows;
+7. structured, semantic, hybrid, and conversational follow-up tests pass;
+8. production secrets are rotated and external security controls are deployed.
 
-| Area                       | Current limitation                                                                                                                      | Required next step                                                                                                          |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| OpenAlex completion        | 58 researchers remain unresolved because the daily key budget is exhausted.                                                             | Resume identity resolution after quota reset; manually review genuinely ambiguous results.                                  |
-| Paper completion           | Full 999-researcher exact reconciliation has not completed.                                                                             | Run the full backfill after identity resolution and wait for a `COMPLETED` ImportRun.                                       |
-| Vector completion          | 18,474 pending and 100 processing in the current snapshot.                                                                              | Keep the vector worker running until the queue drains; retry failed records.                                                |
-| User authentication        | Security can consume `req.user`, but an application-wide end-user authentication guard is not currently wired into the research portal. | Add institutional SSO/OIDC and role-based authorization.                                                                    |
-| Legacy WebSocket gateway   | The team collaboration gateway still uses wildcard CORS and trusts client-supplied room/user identifiers.                               | Disable it if unused, or add handshake authentication, exact origins, DTO validation, room authorization, and event quotas. |
-| Durable job queue          | Imports and vector polling are process/CLI driven despite BullMQ dependencies.                                                          | Move high-volume work to BullMQ with bounded concurrency, retries, dead-letter queues, and monitoring.                      |
-| Provider circuit breaker   | Breaker state is local to one API process.                                                                                              | Store breaker state in Redis for coordinated multi-replica behavior.                                                        |
-| Edge protection            | No CDN/WAF configuration is defined in this repository.                                                                                 | Deploy behind managed TLS, DDoS protection, bot controls, and coarse edge rate limiting.                                    |
-| Database migration history | The existing local schema was not initialized through Prisma migrations.                                                                | Baseline the database before adopting `migrate deploy`.                                                                     |
-| Secret exposure            | Development provider keys were shared interactively.                                                                                    | Rotate exposed keys and store replacements only in secrets management or ignored environment files.                         |
+At the snapshot in this document, Qdrant and the completed embedding ledger agree, but conditions 1 through 5 are not all complete.
 
-## 18. Completion definition
+## 21. External references
 
-The system should be described as fully synchronized only when all of the following are true:
-
-1. The OpenAlex key has available budget and the author-link pass has finished.
-2. Every automatically resolvable researcher has a verified Author link.
-3. Remaining unresolved identities have an explicit manual-review record.
-4. The full researcher-paper job completes all 999 profiles without count mismatches.
-5. The embedding queue has no unexpected pending, processing, or failed rows.
-6. Qdrant and MySQL completed-embedding counts agree.
-7. Researcher profile spot checks show complete publication histories.
-8. Structured, semantic, hybrid, and contextual follow-up chat tests return relevant evidence only.
-9. Production secrets have been rotated and production-only security gaps have been addressed.
-
-At the snapshot recorded in this document, conditions 1–5 are still in progress. The architecture and implementation exist, but data synchronization is not yet complete.
-
-## 19. External references
-
-- [OpenAlex API authentication and rate limits](https://help.openalex.org/api/authentication/)
-- [OpenAlex API reference](https://help.openalex.org/api/)
+- [OpenAlex API documentation](https://docs.openalex.org/)
+- [OpenAlex authentication](https://docs.openalex.org/how-to-use-the-api/rate-limits-and-authentication)
 - [Qdrant documentation](https://qdrant.tech/documentation/)
 - [Prisma documentation](https://www.prisma.io/docs)
 - [NestJS documentation](https://docs.nestjs.com/)
