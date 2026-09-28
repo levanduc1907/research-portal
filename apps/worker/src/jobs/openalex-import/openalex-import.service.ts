@@ -68,6 +68,7 @@ type OpenAlexInstitutionRaw = {
 export class OpenAlexImportService {
   private readonly logger = new Logger(OpenAlexImportService.name);
   private readonly client: OpenAlexClient;
+  private uiucInstitutionDatabaseId?: string;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -134,6 +135,68 @@ export class OpenAlexImportService {
       this.logger.error(`Institution profile sync failed: ${message}`);
       return { totalFetched: 1, totalImported: 0, status: "FAILED" };
     }
+  }
+
+  private async getUiucInstitutionDatabaseId(): Promise<string> {
+    if (this.uiucInstitutionDatabaseId) {
+      return this.uiucInstitutionDatabaseId;
+    }
+    const existing = await this.prisma.institution.findFirst({
+      where: { openalexId: { contains: "I157725225" } },
+      select: { id: true },
+    });
+    const institution =
+      existing ||
+      (await this.prisma.institution.create({
+        data: {
+          openalexId: "https://openalex.org/I157725225",
+          displayName: "University of Illinois Urbana-Champaign",
+          acronym: "UIUC",
+          countryCode: "US",
+          type: "education",
+          homepageUrl: "https://illinois.edu",
+        },
+        select: { id: true },
+      }));
+    this.uiucInstitutionDatabaseId = institution.id;
+    return institution.id;
+  }
+
+  private async linkAuthorToUiuc(authorId: string): Promise<void> {
+    const institutionId = await this.getUiucInstitutionDatabaseId();
+    await this.prisma.authorAffiliation.upsert({
+      where: { authorId_institutionId: { authorId, institutionId } },
+      update: { source: "RESEARCHER_PROFILE", isCurrent: true },
+      create: {
+        authorId,
+        institutionId,
+        source: "RESEARCHER_PROFILE",
+        isCurrent: true,
+      },
+    });
+  }
+
+  async syncResearcherAuthorAffiliations(): Promise<ImportResult> {
+    const researchers = await this.prisma.researcher.findMany({
+      where: { authorId: { not: null } },
+      select: { authorId: true },
+    });
+    const authorIds = [
+      ...new Set(
+        researchers.flatMap(({ authorId }) => (authorId ? [authorId] : [])),
+      ),
+    ];
+    for (const authorId of authorIds) {
+      await this.linkAuthorToUiuc(authorId);
+    }
+    this.logger.log(
+      `Linked ${authorIds.length} researcher authors to the UIUC institution`,
+    );
+    return {
+      totalFetched: researchers.length,
+      totalImported: authorIds.length,
+      status: "COMPLETED",
+    };
   }
 
   private async uniqueResearcherSlug(
@@ -1205,6 +1268,7 @@ export class OpenAlexImportService {
             update: { ...researcherData, authorId },
             create: { ...researcherData, slug, authorId },
           });
+          await this.linkAuthorToUiuc(authorId);
           await this.prisma.researcherKeyword.deleteMany({
             where: { researcherId: researcher.id },
           });
@@ -1347,6 +1411,7 @@ export class OpenAlexImportService {
                 department,
               },
             });
+        await this.linkAuthorToUiuc(authorId);
         await this.prisma.researcherKeyword.deleteMany({
           where: { researcherId: researcher.id },
         });
@@ -1466,6 +1531,7 @@ export class OpenAlexImportService {
             where: { id: researcher.id },
             data: { authorId: author.id, openalexId: author.openalexId },
           });
+          await this.linkAuthorToUiuc(author.id);
           unavailableAuthorIds.add(author.id);
           totalImported++;
         } else {
@@ -1493,6 +1559,7 @@ export class OpenAlexImportService {
           where: { id: researcher.id },
           data: { authorId: author.id, openalexId: author.openalexId },
         });
+        await this.linkAuthorToUiuc(author.id);
         unavailableAuthorIds.add(author.id);
         totalImported++;
         fuzzyLocalMatches++;
@@ -1792,6 +1859,7 @@ export class OpenAlexImportService {
         citedByCount: normalized.citedByCount,
       },
     });
+    await this.linkAuthorToUiuc(authorId);
     return raw;
   }
 

@@ -54,6 +54,7 @@ export const ModelName = {
   Institution: 'Institution',
   Paper: 'Paper',
   Author: 'Author',
+  AuthorAffiliation: 'AuthorAffiliation',
   PaperAuthor: 'PaperAuthor',
   Topic: 'Topic',
   PaperTopic: 'PaperTopic',
@@ -135,6 +136,20 @@ export const AuthorScalarFieldEnum = {
 } as const
 
 export type AuthorScalarFieldEnum = (typeof AuthorScalarFieldEnum)[keyof typeof AuthorScalarFieldEnum]
+
+
+export const AuthorAffiliationScalarFieldEnum = {
+  id: 'id',
+  authorId: 'authorId',
+  institutionId: 'institutionId',
+  source: 'source',
+  isCurrent: 'isCurrent',
+  years: 'years',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type AuthorAffiliationScalarFieldEnum = (typeof AuthorAffiliationScalarFieldEnum)[keyof typeof AuthorAffiliationScalarFieldEnum]
 
 
 export const PaperAuthorScalarFieldEnum = {
@@ -357,6 +372,16 @@ export const AuthorOrderByRelevanceFieldEnum = {
 } as const
 
 export type AuthorOrderByRelevanceFieldEnum = (typeof AuthorOrderByRelevanceFieldEnum)[keyof typeof AuthorOrderByRelevanceFieldEnum]
+
+
+export const AuthorAffiliationOrderByRelevanceFieldEnum = {
+  id: 'id',
+  authorId: 'authorId',
+  institutionId: 'institutionId',
+  source: 'source'
+} as const
+
+export type AuthorAffiliationOrderByRelevanceFieldEnum = (typeof AuthorAffiliationOrderByRelevanceFieldEnum)[keyof typeof AuthorAffiliationOrderByRelevanceFieldEnum]
 
 
 export const PaperAuthorOrderByRelevanceFieldEnum = {

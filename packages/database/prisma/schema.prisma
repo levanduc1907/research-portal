@@ -37,7 +37,7 @@ model Institution {
   countryCode     String?  @map("country_code")
   type            String?
   homepageUrl     String?  @map("homepage_url")
-  imageUrl        String?  @db.Text @map("image_url")
+  imageUrl        String?  @map("image_url") @db.Text
   worksCount      Int      @default(0) @map("works_count")
   citedByCount    Int      @default(0) @map("cited_by_count")
   hIndex          Int?     @map("h_index")
@@ -47,6 +47,8 @@ model Institution {
   summaryStats    Json?    @map("summary_stats")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
+
+  authorAffiliations AuthorAffiliation[]
 
   @@map("institutions")
 }
@@ -60,8 +62,8 @@ model Paper {
   publicationYear Int      @map("publication_year")
   citedByCount    Int      @default(0) @map("cited_by_count")
   abstract        String?  @db.LongText
-  landingPageUrl  String?  @db.Text @map("landing_page_url")
-  pdfUrl          String?  @db.Text @map("pdf_url")
+  landingPageUrl  String?  @map("landing_page_url") @db.Text
+  pdfUrl          String?  @map("pdf_url") @db.Text
   primaryTopicId  String?  @map("primary_topic_id")
   primaryTopic    Topic?   @relation("PrimaryPaperTopic", fields: [primaryTopicId], references: [id], onDelete: SetNull)
 
@@ -69,8 +71,8 @@ model Paper {
   topics          PaperTopic[]
   embeddingRecord EmbeddingRecord?
 
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([publicationDate])
   @@index([publicationYear])
@@ -85,28 +87,46 @@ model Paper {
 model Author {
   id          String   @id @default(uuid())
   openalexId  String   @unique @map("openalex_id")
-  displayName String   @db.Text @map("display_name")
+  displayName String   @map("display_name") @db.Text
   orcid       String?
   institution String?  @default("University of Illinois Urbana-Champaign")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
-  papers      PaperAuthor[]
-  researcher  Researcher?
+  papers       PaperAuthor[]
+  researcher   Researcher?
+  affiliations AuthorAffiliation[]
 
   @@map("authors")
 }
 
+model AuthorAffiliation {
+  id            String      @id @default(uuid())
+  authorId      String      @map("author_id")
+  author        Author      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  institutionId String      @map("institution_id")
+  institution   Institution @relation(fields: [institutionId], references: [id], onDelete: Cascade)
+  source        String      @default("RESEARCHER_PROFILE")
+  isCurrent     Boolean     @default(true) @map("is_current")
+  years         Json?
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+
+  @@unique([authorId, institutionId])
+  @@index([institutionId, isCurrent])
+  @@map("author_affiliations")
+}
+
 model PaperAuthor {
-  id             String   @id @default(uuid())
-  paperId        String   @map("paper_id")
-  paper          Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
-  authorId       String   @map("author_id")
-  author         Author   @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  authorPosition String   @default("middle") @map("author_position") // "first", "middle", "last"
+  id              String  @id @default(uuid())
+  paperId         String  @map("paper_id")
+  paper           Paper   @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  authorId        String  @map("author_id")
+  author          Author  @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorPosition  String  @default("middle") @map("author_position") // "first", "middle", "last"
   isCorresponding Boolean @default(false) @map("is_corresponding")
 
-  createdAt      DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([paperId, authorId])
   @@index([paperId])
@@ -115,17 +135,17 @@ model PaperAuthor {
 }
 
 model Topic {
-  id            String   @id @default(uuid())
-  openalexId    String   @unique @map("openalex_id")
-  displayName   String   @map("display_name")
-  subfieldId    String?  @map("subfield_id")
-  subfieldName  String?  @map("subfield_name")
-  fieldId       String?  @map("field_id")
-  fieldName     String?  @map("field_name")
-  domainId      String?  @map("domain_id")
-  domainName    String?  @map("domain_name")
-  worksCount    Int      @default(0) @map("works_count")
-  createdAt     DateTime @default(now()) @map("created_at")
+  id           String   @id @default(uuid())
+  openalexId   String   @unique @map("openalex_id")
+  displayName  String   @map("display_name")
+  subfieldId   String?  @map("subfield_id")
+  subfieldName String?  @map("subfield_name")
+  fieldId      String?  @map("field_id")
+  fieldName    String?  @map("field_name")
+  domainId     String?  @map("domain_id")
+  domainName   String?  @map("domain_name")
+  worksCount   Int      @default(0) @map("works_count")
+  createdAt    DateTime @default(now()) @map("created_at")
 
   papers        PaperTopic[]
   primaryPapers Paper[]      @relation("PrimaryPaperTopic")
@@ -136,13 +156,13 @@ model Topic {
 }
 
 model PaperTopic {
-  id        String   @id @default(uuid())
-  paperId   String   @map("paper_id")
-  paper     Paper    @relation(fields: [paperId], references: [id], onDelete: Cascade)
-  topicId   String   @map("topic_id")
-  topic     Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
-  score     Float    @default(0.0)
-  isPrimary Boolean  @default(false) @map("is_primary")
+  id        String  @id @default(uuid())
+  paperId   String  @map("paper_id")
+  paper     Paper   @relation(fields: [paperId], references: [id], onDelete: Cascade)
+  topicId   String  @map("topic_id")
+  topic     Topic   @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  score     Float   @default(0.0)
+  isPrimary Boolean @default(false) @map("is_primary")
 
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -153,25 +173,25 @@ model PaperTopic {
 }
 
 model Researcher {
-  id             String   @id @default(uuid())
-  slug           String   @unique
-  authorId       String?  @unique @map("author_id")
-  author         Author?  @relation(fields: [authorId], references: [id], onDelete: Restrict)
+  id           String   @id @default(uuid())
+  slug         String   @unique
+  authorId     String?  @unique @map("author_id")
+  author       Author?  @relation(fields: [authorId], references: [id], onDelete: Restrict)
   // Transitional: remove after every legacy row has been linked through authorId.
-  openalexId     String?  @unique @map("openalex_id")
-  name           String
-  email          String?  @unique
-  department     String?
-  title          String?  @db.Text // e.g. "Professor of Computer Science"
-  bio            String?  @db.Text
-  profileUrl     String?  @db.Text @map("profile_url")
-  photoUrl       String?  @db.Text @map("photo_url")
-  worksCount     Int      @default(0) @map("works_count")
-  citedByCount   Int      @default(0) @map("cited_by_count")
-  createdAt      DateTime @default(now()) @map("created_at")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  openalexId   String?  @unique @map("openalex_id")
+  name         String
+  email        String?  @unique
+  department   String?
+  title        String?  @db.Text // e.g. "Professor of Computer Science"
+  bio          String?  @db.Text
+  profileUrl   String?  @map("profile_url") @db.Text
+  photoUrl     String?  @map("photo_url") @db.Text
+  worksCount   Int      @default(0) @map("works_count")
+  citedByCount Int      @default(0) @map("cited_by_count")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  keywords       ResearcherKeyword[]
+  keywords ResearcherKeyword[]
 
   @@index([name])
   @@index([department])
@@ -193,17 +213,17 @@ model ResearcherKeyword {
 }
 
 model ImportRun {
-  id             String       @id @default(uuid())
-  source         String       @default("openalex")
-  status         ImportStatus @default(PENDING)
-  cursor         String?      @db.Text
-  totalFetched   Int          @default(0) @map("total_fetched")
-  importedCount  Int          @default(0) @map("imported_count")
-  errorMessage   String?      @db.Text @map("error_message")
-  startedAt      DateTime?    @map("started_at")
-  completedAt    DateTime?    @map("completed_at")
-  createdAt      DateTime     @default(now()) @map("created_at")
-  updatedAt      DateTime     @updatedAt @map("updated_at")
+  id            String       @id @default(uuid())
+  source        String       @default("openalex")
+  status        ImportStatus @default(PENDING)
+  cursor        String?      @db.Text
+  totalFetched  Int          @default(0) @map("total_fetched")
+  importedCount Int          @default(0) @map("imported_count")
+  errorMessage  String?      @map("error_message") @db.Text
+  startedAt     DateTime?    @map("started_at")
+  completedAt   DateTime?    @map("completed_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
 
   @@index([status])
   @@index([source, status, updatedAt])
@@ -219,7 +239,7 @@ model EmbeddingRecord {
   contentHash      String          @map("content_hash")
   qdrantPointId    String?         @map("qdrant_point_id")
   status           EmbeddingStatus @default(PENDING)
-  errorMessage     String?         @db.Text @map("error_message")
+  errorMessage     String?         @map("error_message") @db.Text
   createdAt        DateTime        @default(now()) @map("created_at")
   updatedAt        DateTime        @updatedAt @map("updated_at")
 
@@ -246,17 +266,17 @@ model AiCredential {
   id              String    @id @default(uuid())
   name            String    @unique
   provider        String
-  encryptedApiKey String    @db.LongText @map("encrypted_api_key")
+  encryptedApiKey String    @map("encrypted_api_key") @db.LongText
   encryptionIv    String    @map("encryption_iv")
   encryptionTag   String    @map("encryption_tag")
   keyHint         String    @map("key_hint")
-  baseUrl         String?   @db.Text @map("base_url")
+  baseUrl         String?   @map("base_url") @db.Text
   defaultModel    String    @map("default_model")
   isActive        Boolean   @default(true) @map("is_active")
   isDefault       Boolean   @default(false) @map("is_default")
   lastTestedAt    DateTime? @map("last_tested_at")
   lastTestStatus  String?   @map("last_test_status")
-  lastError       String?   @db.Text @map("last_error")
+  lastError       String?   @map("last_error") @db.Text
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
 

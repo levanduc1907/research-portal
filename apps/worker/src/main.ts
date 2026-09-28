@@ -18,6 +18,7 @@ async function bootstrap() {
     command === "import-phase2" ||
     command === "sync-institution" ||
     command === "link-researcher-authors" ||
+    command === "sync-researcher-affiliations" ||
     command === "sync-researcher-metrics" ||
     command === "backfill-researcher-papers" ||
     command === "backfill-researcher-departments" ||
@@ -57,6 +58,13 @@ async function bootstrap() {
     }
     if (command === "link-researcher-authors") {
       const result = await importer.linkExistingResearchersToAuthors();
+      failed ||= result.status === "FAILED";
+    }
+    if (command === "sync-researcher-affiliations") {
+      const result = await importer.syncResearcherAuthorAffiliations();
+      logger.log(
+        `Researcher affiliation sync finished: ${result.totalImported} unique authors linked from ${result.totalFetched} researchers`,
+      );
       failed ||= result.status === "FAILED";
     }
     if (command === "sync-researcher-metrics") {

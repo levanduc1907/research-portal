@@ -10,6 +10,7 @@
     "import:faculty": "nest start -- import-faculty",
     "import:faculty:csv": "nest start -- import-faculty-csv",
     "link:researcher-authors": "nest start -- link-researcher-authors",
+    "sync:researcher-affiliations": "nest start -- sync-researcher-affiliations",
     "sync:institution": "nest start -- sync-institution",
     "sync:researcher-metrics": "nest start -- sync-researcher-metrics",
     "backfill:researcher-papers": "nest start -- backfill-researcher-papers",

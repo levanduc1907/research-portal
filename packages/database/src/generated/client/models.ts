@@ -11,6 +11,7 @@
 export type * from './models/Institution'
 export type * from './models/Paper'
 export type * from './models/Author'
+export type * from './models/AuthorAffiliation'
 export type * from './models/PaperAuthor'
 export type * from './models/Topic'
 export type * from './models/PaperTopic'

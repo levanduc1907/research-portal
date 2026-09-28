@@ -947,7 +947,13 @@ export class ChatService {
                 displayName: true,
                 openalexId: true,
                 orcid: true,
-                institution: true,
+                affiliations: {
+                  where: { isCurrent: true },
+                  take: 3,
+                  select: {
+                    institution: { select: { displayName: true } },
+                  },
+                },
               },
             },
           },
@@ -999,8 +1005,10 @@ export class ChatService {
       researcher.title ? `title=${researcher.title}` : null,
       researcher.department ? `department=${researcher.department}` : null,
       researcher.email ? `email=${researcher.email}` : null,
-      researcher.author?.institution
-        ? `institution=${researcher.author.institution}`
+      researcher.author?.affiliations.length
+        ? `institution=${researcher.author.affiliations
+            .map(({ institution }) => institution.displayName)
+            .join(", ")}`
         : null,
       researcher.author?.orcid ? `ORCID=${researcher.author.orcid}` : null,
       researcher.author?.openalexId
@@ -1313,7 +1321,11 @@ export class ChatService {
       select: {
         id: true,
         displayName: true,
-        institution: true,
+        affiliations: {
+          where: { isCurrent: true },
+          take: 3,
+          select: { institution: { select: { displayName: true } } },
+        },
         researcher: { select: { slug: true, department: true } },
       },
     });
@@ -1338,7 +1350,7 @@ export class ChatService {
             `Top indexed coauthors of ${researcher.name}: ${ranked
               .map(
                 (author, index) =>
-                  `${index + 1}. ${author.displayName}: ${author.sharedPapers} shared paper(s)${author.researcher?.department ? `, ${author.researcher.department}` : author.institution ? `, ${author.institution}` : ""}`,
+                  `${index + 1}. ${author.displayName}: ${author.sharedPapers} shared paper(s)${author.researcher?.department ? `, ${author.researcher.department}` : author.affiliations.length ? `, ${author.affiliations.map(({ institution }) => institution.displayName).join(", ")}` : ""}`,
               )
               .join("; ")}.`,
           ]

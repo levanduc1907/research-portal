@@ -400,6 +400,7 @@ export const ModelName = {
   Institution: 'Institution',
   Paper: 'Paper',
   Author: 'Author',
+  AuthorAffiliation: 'AuthorAffiliation',
   PaperAuthor: 'PaperAuthor',
   Topic: 'Topic',
   PaperTopic: 'PaperTopic',
@@ -424,7 +425,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "institution" | "paper" | "author" | "paperAuthor" | "topic" | "paperTopic" | "researcher" | "researcherKeyword" | "importRun" | "embeddingRecord" | "chatRequest" | "aiCredential"
+    modelProps: "institution" | "paper" | "author" | "authorAffiliation" | "paperAuthor" | "topic" | "paperTopic" | "researcher" | "researcherKeyword" | "importRun" | "embeddingRecord" | "chatRequest" | "aiCredential"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -623,6 +624,72 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         count: {
           args: Prisma.AuthorCountArgs<ExtArgs>
           result: runtime.Types.Utils.Optional<Prisma.AuthorCountAggregateOutputType> | number
+        }
+      }
+    }
+    AuthorAffiliation: {
+      payload: Prisma.$AuthorAffiliationPayload<ExtArgs>
+      fields: Prisma.AuthorAffiliationFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.AuthorAffiliationFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.AuthorAffiliationFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload>
+        }
+        findFirst: {
+          args: Prisma.AuthorAffiliationFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.AuthorAffiliationFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload>
+        }
+        findMany: {
+          args: Prisma.AuthorAffiliationFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload>[]
+        }
+        create: {
+          args: Prisma.AuthorAffiliationCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload>
+        }
+        createMany: {
+          args: Prisma.AuthorAffiliationCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        delete: {
+          args: Prisma.AuthorAffiliationDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload>
+        }
+        update: {
+          args: Prisma.AuthorAffiliationUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload>
+        }
+        deleteMany: {
+          args: Prisma.AuthorAffiliationDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.AuthorAffiliationUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        upsert: {
+          args: Prisma.AuthorAffiliationUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$AuthorAffiliationPayload>
+        }
+        aggregate: {
+          args: Prisma.AuthorAffiliationAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateAuthorAffiliation>
+        }
+        groupBy: {
+          args: Prisma.AuthorAffiliationGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AuthorAffiliationGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.AuthorAffiliationCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AuthorAffiliationCountAggregateOutputType> | number
         }
       }
     }
@@ -1315,6 +1382,20 @@ export const AuthorScalarFieldEnum = {
 export type AuthorScalarFieldEnum = (typeof AuthorScalarFieldEnum)[keyof typeof AuthorScalarFieldEnum]
 
 
+export const AuthorAffiliationScalarFieldEnum = {
+  id: 'id',
+  authorId: 'authorId',
+  institutionId: 'institutionId',
+  source: 'source',
+  isCurrent: 'isCurrent',
+  years: 'years',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type AuthorAffiliationScalarFieldEnum = (typeof AuthorAffiliationScalarFieldEnum)[keyof typeof AuthorAffiliationScalarFieldEnum]
+
+
 export const PaperAuthorScalarFieldEnum = {
   id: 'id',
   paperId: 'paperId',
@@ -1535,6 +1616,16 @@ export const AuthorOrderByRelevanceFieldEnum = {
 } as const
 
 export type AuthorOrderByRelevanceFieldEnum = (typeof AuthorOrderByRelevanceFieldEnum)[keyof typeof AuthorOrderByRelevanceFieldEnum]
+
+
+export const AuthorAffiliationOrderByRelevanceFieldEnum = {
+  id: 'id',
+  authorId: 'authorId',
+  institutionId: 'institutionId',
+  source: 'source'
+} as const
+
+export type AuthorAffiliationOrderByRelevanceFieldEnum = (typeof AuthorAffiliationOrderByRelevanceFieldEnum)[keyof typeof AuthorAffiliationOrderByRelevanceFieldEnum]
 
 
 export const PaperAuthorOrderByRelevanceFieldEnum = {
@@ -1876,6 +1967,7 @@ export type GlobalOmitConfig = {
   institution?: Prisma.InstitutionOmit
   paper?: Prisma.PaperOmit
   author?: Prisma.AuthorOmit
+  authorAffiliation?: Prisma.AuthorAffiliationOmit
   paperAuthor?: Prisma.PaperAuthorOmit
   topic?: Prisma.TopicOmit
   paperTopic?: Prisma.PaperTopicOmit

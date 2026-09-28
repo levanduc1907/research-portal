@@ -200,6 +200,7 @@ export type AuthorWhereInput = {
   updatedAt?: Prisma.DateTimeFilter<"Author"> | Date | string
   papers?: Prisma.PaperAuthorListRelationFilter
   researcher?: Prisma.XOR<Prisma.ResearcherNullableScalarRelationFilter, Prisma.ResearcherWhereInput> | null
+  affiliations?: Prisma.AuthorAffiliationListRelationFilter
 }
 
 export type AuthorOrderByWithRelationInput = {
@@ -212,6 +213,7 @@ export type AuthorOrderByWithRelationInput = {
   updatedAt?: Prisma.SortOrder
   papers?: Prisma.PaperAuthorOrderByRelationAggregateInput
   researcher?: Prisma.ResearcherOrderByWithRelationInput
+  affiliations?: Prisma.AuthorAffiliationOrderByRelationAggregateInput
   _relevance?: Prisma.AuthorOrderByRelevanceInput
 }
 
@@ -228,6 +230,7 @@ export type AuthorWhereUniqueInput = Prisma.AtLeast<{
   updatedAt?: Prisma.DateTimeFilter<"Author"> | Date | string
   papers?: Prisma.PaperAuthorListRelationFilter
   researcher?: Prisma.XOR<Prisma.ResearcherNullableScalarRelationFilter, Prisma.ResearcherWhereInput> | null
+  affiliations?: Prisma.AuthorAffiliationListRelationFilter
 }, "id" | "openalexId">
 
 export type AuthorOrderByWithAggregationInput = {
@@ -266,6 +269,7 @@ export type AuthorCreateInput = {
   updatedAt?: Date | string
   papers?: Prisma.PaperAuthorCreateNestedManyWithoutAuthorInput
   researcher?: Prisma.ResearcherCreateNestedOneWithoutAuthorInput
+  affiliations?: Prisma.AuthorAffiliationCreateNestedManyWithoutAuthorInput
 }
 
 export type AuthorUncheckedCreateInput = {
@@ -278,6 +282,7 @@ export type AuthorUncheckedCreateInput = {
   updatedAt?: Date | string
   papers?: Prisma.PaperAuthorUncheckedCreateNestedManyWithoutAuthorInput
   researcher?: Prisma.ResearcherUncheckedCreateNestedOneWithoutAuthorInput
+  affiliations?: Prisma.AuthorAffiliationUncheckedCreateNestedManyWithoutAuthorInput
 }
 
 export type AuthorUpdateInput = {
@@ -290,6 +295,7 @@ export type AuthorUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   papers?: Prisma.PaperAuthorUpdateManyWithoutAuthorNestedInput
   researcher?: Prisma.ResearcherUpdateOneWithoutAuthorNestedInput
+  affiliations?: Prisma.AuthorAffiliationUpdateManyWithoutAuthorNestedInput
 }
 
 export type AuthorUncheckedUpdateInput = {
@@ -302,6 +308,7 @@ export type AuthorUncheckedUpdateInput = {
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   papers?: Prisma.PaperAuthorUncheckedUpdateManyWithoutAuthorNestedInput
   researcher?: Prisma.ResearcherUncheckedUpdateOneWithoutAuthorNestedInput
+  affiliations?: Prisma.AuthorAffiliationUncheckedUpdateManyWithoutAuthorNestedInput
 }
 
 export type AuthorCreateManyInput = {
@@ -380,6 +387,20 @@ export type AuthorNullableScalarRelationFilter = {
   isNot?: Prisma.AuthorWhereInput | null
 }
 
+export type AuthorCreateNestedOneWithoutAffiliationsInput = {
+  create?: Prisma.XOR<Prisma.AuthorCreateWithoutAffiliationsInput, Prisma.AuthorUncheckedCreateWithoutAffiliationsInput>
+  connectOrCreate?: Prisma.AuthorCreateOrConnectWithoutAffiliationsInput
+  connect?: Prisma.AuthorWhereUniqueInput
+}
+
+export type AuthorUpdateOneRequiredWithoutAffiliationsNestedInput = {
+  create?: Prisma.XOR<Prisma.AuthorCreateWithoutAffiliationsInput, Prisma.AuthorUncheckedCreateWithoutAffiliationsInput>
+  connectOrCreate?: Prisma.AuthorCreateOrConnectWithoutAffiliationsInput
+  upsert?: Prisma.AuthorUpsertWithoutAffiliationsInput
+  connect?: Prisma.AuthorWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.AuthorUpdateToOneWithWhereWithoutAffiliationsInput, Prisma.AuthorUpdateWithoutAffiliationsInput>, Prisma.AuthorUncheckedUpdateWithoutAffiliationsInput>
+}
+
 export type AuthorCreateNestedOneWithoutPapersInput = {
   create?: Prisma.XOR<Prisma.AuthorCreateWithoutPapersInput, Prisma.AuthorUncheckedCreateWithoutPapersInput>
   connectOrCreate?: Prisma.AuthorCreateOrConnectWithoutPapersInput
@@ -410,6 +431,70 @@ export type AuthorUpdateOneWithoutResearcherNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.AuthorUpdateToOneWithWhereWithoutResearcherInput, Prisma.AuthorUpdateWithoutResearcherInput>, Prisma.AuthorUncheckedUpdateWithoutResearcherInput>
 }
 
+export type AuthorCreateWithoutAffiliationsInput = {
+  id?: string
+  openalexId: string
+  displayName: string
+  orcid?: string | null
+  institution?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  papers?: Prisma.PaperAuthorCreateNestedManyWithoutAuthorInput
+  researcher?: Prisma.ResearcherCreateNestedOneWithoutAuthorInput
+}
+
+export type AuthorUncheckedCreateWithoutAffiliationsInput = {
+  id?: string
+  openalexId: string
+  displayName: string
+  orcid?: string | null
+  institution?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  papers?: Prisma.PaperAuthorUncheckedCreateNestedManyWithoutAuthorInput
+  researcher?: Prisma.ResearcherUncheckedCreateNestedOneWithoutAuthorInput
+}
+
+export type AuthorCreateOrConnectWithoutAffiliationsInput = {
+  where: Prisma.AuthorWhereUniqueInput
+  create: Prisma.XOR<Prisma.AuthorCreateWithoutAffiliationsInput, Prisma.AuthorUncheckedCreateWithoutAffiliationsInput>
+}
+
+export type AuthorUpsertWithoutAffiliationsInput = {
+  update: Prisma.XOR<Prisma.AuthorUpdateWithoutAffiliationsInput, Prisma.AuthorUncheckedUpdateWithoutAffiliationsInput>
+  create: Prisma.XOR<Prisma.AuthorCreateWithoutAffiliationsInput, Prisma.AuthorUncheckedCreateWithoutAffiliationsInput>
+  where?: Prisma.AuthorWhereInput
+}
+
+export type AuthorUpdateToOneWithWhereWithoutAffiliationsInput = {
+  where?: Prisma.AuthorWhereInput
+  data: Prisma.XOR<Prisma.AuthorUpdateWithoutAffiliationsInput, Prisma.AuthorUncheckedUpdateWithoutAffiliationsInput>
+}
+
+export type AuthorUpdateWithoutAffiliationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  openalexId?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  orcid?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  institution?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  papers?: Prisma.PaperAuthorUpdateManyWithoutAuthorNestedInput
+  researcher?: Prisma.ResearcherUpdateOneWithoutAuthorNestedInput
+}
+
+export type AuthorUncheckedUpdateWithoutAffiliationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  openalexId?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  orcid?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  institution?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  papers?: Prisma.PaperAuthorUncheckedUpdateManyWithoutAuthorNestedInput
+  researcher?: Prisma.ResearcherUncheckedUpdateOneWithoutAuthorNestedInput
+}
+
 export type AuthorCreateWithoutPapersInput = {
   id?: string
   openalexId: string
@@ -419,6 +504,7 @@ export type AuthorCreateWithoutPapersInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   researcher?: Prisma.ResearcherCreateNestedOneWithoutAuthorInput
+  affiliations?: Prisma.AuthorAffiliationCreateNestedManyWithoutAuthorInput
 }
 
 export type AuthorUncheckedCreateWithoutPapersInput = {
@@ -430,6 +516,7 @@ export type AuthorUncheckedCreateWithoutPapersInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   researcher?: Prisma.ResearcherUncheckedCreateNestedOneWithoutAuthorInput
+  affiliations?: Prisma.AuthorAffiliationUncheckedCreateNestedManyWithoutAuthorInput
 }
 
 export type AuthorCreateOrConnectWithoutPapersInput = {
@@ -457,6 +544,7 @@ export type AuthorUpdateWithoutPapersInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   researcher?: Prisma.ResearcherUpdateOneWithoutAuthorNestedInput
+  affiliations?: Prisma.AuthorAffiliationUpdateManyWithoutAuthorNestedInput
 }
 
 export type AuthorUncheckedUpdateWithoutPapersInput = {
@@ -468,6 +556,7 @@ export type AuthorUncheckedUpdateWithoutPapersInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   researcher?: Prisma.ResearcherUncheckedUpdateOneWithoutAuthorNestedInput
+  affiliations?: Prisma.AuthorAffiliationUncheckedUpdateManyWithoutAuthorNestedInput
 }
 
 export type AuthorCreateWithoutResearcherInput = {
@@ -479,6 +568,7 @@ export type AuthorCreateWithoutResearcherInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   papers?: Prisma.PaperAuthorCreateNestedManyWithoutAuthorInput
+  affiliations?: Prisma.AuthorAffiliationCreateNestedManyWithoutAuthorInput
 }
 
 export type AuthorUncheckedCreateWithoutResearcherInput = {
@@ -490,6 +580,7 @@ export type AuthorUncheckedCreateWithoutResearcherInput = {
   createdAt?: Date | string
   updatedAt?: Date | string
   papers?: Prisma.PaperAuthorUncheckedCreateNestedManyWithoutAuthorInput
+  affiliations?: Prisma.AuthorAffiliationUncheckedCreateNestedManyWithoutAuthorInput
 }
 
 export type AuthorCreateOrConnectWithoutResearcherInput = {
@@ -517,6 +608,7 @@ export type AuthorUpdateWithoutResearcherInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   papers?: Prisma.PaperAuthorUpdateManyWithoutAuthorNestedInput
+  affiliations?: Prisma.AuthorAffiliationUpdateManyWithoutAuthorNestedInput
 }
 
 export type AuthorUncheckedUpdateWithoutResearcherInput = {
@@ -528,6 +620,7 @@ export type AuthorUncheckedUpdateWithoutResearcherInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   papers?: Prisma.PaperAuthorUncheckedUpdateManyWithoutAuthorNestedInput
+  affiliations?: Prisma.AuthorAffiliationUncheckedUpdateManyWithoutAuthorNestedInput
 }
 
 
@@ -537,10 +630,12 @@ export type AuthorUncheckedUpdateWithoutResearcherInput = {
 
 export type AuthorCountOutputType = {
   papers: number
+  affiliations: number
 }
 
 export type AuthorCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   papers?: boolean | AuthorCountOutputTypeCountPapersArgs
+  affiliations?: boolean | AuthorCountOutputTypeCountAffiliationsArgs
 }
 
 /**
@@ -560,6 +655,13 @@ export type AuthorCountOutputTypeCountPapersArgs<ExtArgs extends runtime.Types.E
   where?: Prisma.PaperAuthorWhereInput
 }
 
+/**
+ * AuthorCountOutputType without action
+ */
+export type AuthorCountOutputTypeCountAffiliationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.AuthorAffiliationWhereInput
+}
+
 
 export type AuthorSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -571,6 +673,7 @@ export type AuthorSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs =
   updatedAt?: boolean
   papers?: boolean | Prisma.Author$papersArgs<ExtArgs>
   researcher?: boolean | Prisma.Author$researcherArgs<ExtArgs>
+  affiliations?: boolean | Prisma.Author$affiliationsArgs<ExtArgs>
   _count?: boolean | Prisma.AuthorCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["author"]>
 
@@ -590,6 +693,7 @@ export type AuthorOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
 export type AuthorInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   papers?: boolean | Prisma.Author$papersArgs<ExtArgs>
   researcher?: boolean | Prisma.Author$researcherArgs<ExtArgs>
+  affiliations?: boolean | Prisma.Author$affiliationsArgs<ExtArgs>
   _count?: boolean | Prisma.AuthorCountOutputTypeDefaultArgs<ExtArgs>
 }
 
@@ -598,6 +702,7 @@ export type $AuthorPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs
   objects: {
     papers: Prisma.$PaperAuthorPayload<ExtArgs>[]
     researcher: Prisma.$ResearcherPayload<ExtArgs> | null
+    affiliations: Prisma.$AuthorAffiliationPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -949,6 +1054,7 @@ export interface Prisma__AuthorClient<T, Null = never, ExtArgs extends runtime.T
   readonly [Symbol.toStringTag]: "PrismaPromise"
   papers<T extends Prisma.Author$papersArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Author$papersArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PaperAuthorPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   researcher<T extends Prisma.Author$researcherArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Author$researcherArgs<ExtArgs>>): Prisma.Prisma__ResearcherClient<runtime.Types.Result.GetResult<Prisma.$ResearcherPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
+  affiliations<T extends Prisma.Author$affiliationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Author$affiliationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AuthorAffiliationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1373,6 +1479,30 @@ export type Author$researcherArgs<ExtArgs extends runtime.Types.Extensions.Inter
    */
   include?: Prisma.ResearcherInclude<ExtArgs> | null
   where?: Prisma.ResearcherWhereInput
+}
+
+/**
+ * Author.affiliations
+ */
+export type Author$affiliationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the AuthorAffiliation
+   */
+  select?: Prisma.AuthorAffiliationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the AuthorAffiliation
+   */
+  omit?: Prisma.AuthorAffiliationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.AuthorAffiliationInclude<ExtArgs> | null
+  where?: Prisma.AuthorAffiliationWhereInput
+  orderBy?: Prisma.AuthorAffiliationOrderByWithRelationInput | Prisma.AuthorAffiliationOrderByWithRelationInput[]
+  cursor?: Prisma.AuthorAffiliationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.AuthorAffiliationScalarFieldEnum | Prisma.AuthorAffiliationScalarFieldEnum[]
 }
 
 /**

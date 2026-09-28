@@ -438,10 +438,6 @@ export type PaperAuthorUncheckedUpdateManyWithoutAuthorNestedInput = {
   deleteMany?: Prisma.PaperAuthorScalarWhereInput | Prisma.PaperAuthorScalarWhereInput[]
 }
 
-export type BoolFieldUpdateOperationsInput = {
-  set?: boolean
-}
-
 export type PaperAuthorCreateWithoutPaperInput = {
   id?: string
   authorPosition?: string

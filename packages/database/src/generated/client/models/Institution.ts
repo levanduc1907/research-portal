@@ -328,6 +328,7 @@ export type InstitutionWhereInput = {
   summaryStats?: Prisma.JsonNullableFilter<"Institution">
   createdAt?: Prisma.DateTimeFilter<"Institution"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Institution"> | Date | string
+  authorAffiliations?: Prisma.AuthorAffiliationListRelationFilter
 }
 
 export type InstitutionOrderByWithRelationInput = {
@@ -349,6 +350,7 @@ export type InstitutionOrderByWithRelationInput = {
   summaryStats?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
+  authorAffiliations?: Prisma.AuthorAffiliationOrderByRelationAggregateInput
   _relevance?: Prisma.InstitutionOrderByRelevanceInput
 }
 
@@ -374,6 +376,7 @@ export type InstitutionWhereUniqueInput = Prisma.AtLeast<{
   summaryStats?: Prisma.JsonNullableFilter<"Institution">
   createdAt?: Prisma.DateTimeFilter<"Institution"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"Institution"> | Date | string
+  authorAffiliations?: Prisma.AuthorAffiliationListRelationFilter
 }, "id" | "openalexId">
 
 export type InstitutionOrderByWithAggregationInput = {
@@ -445,6 +448,7 @@ export type InstitutionCreateInput = {
   summaryStats?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
   updatedAt?: Date | string
+  authorAffiliations?: Prisma.AuthorAffiliationCreateNestedManyWithoutInstitutionInput
 }
 
 export type InstitutionUncheckedCreateInput = {
@@ -466,6 +470,7 @@ export type InstitutionUncheckedCreateInput = {
   summaryStats?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Date | string
   updatedAt?: Date | string
+  authorAffiliations?: Prisma.AuthorAffiliationUncheckedCreateNestedManyWithoutInstitutionInput
 }
 
 export type InstitutionUpdateInput = {
@@ -487,6 +492,7 @@ export type InstitutionUpdateInput = {
   summaryStats?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  authorAffiliations?: Prisma.AuthorAffiliationUpdateManyWithoutInstitutionNestedInput
 }
 
 export type InstitutionUncheckedUpdateInput = {
@@ -508,6 +514,7 @@ export type InstitutionUncheckedUpdateInput = {
   summaryStats?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  authorAffiliations?: Prisma.AuthorAffiliationUncheckedUpdateManyWithoutInstitutionNestedInput
 }
 
 export type InstitutionCreateManyInput = {
@@ -654,6 +661,11 @@ export type InstitutionSumOrderByAggregateInput = {
   twoYearMeanCite?: Prisma.SortOrder
 }
 
+export type InstitutionScalarRelationFilter = {
+  is?: Prisma.InstitutionWhereInput
+  isNot?: Prisma.InstitutionWhereInput
+}
+
 export type StringFieldUpdateOperationsInput = {
   set?: string
 }
@@ -690,6 +702,149 @@ export type DateTimeFieldUpdateOperationsInput = {
   set?: Date | string
 }
 
+export type InstitutionCreateNestedOneWithoutAuthorAffiliationsInput = {
+  create?: Prisma.XOR<Prisma.InstitutionCreateWithoutAuthorAffiliationsInput, Prisma.InstitutionUncheckedCreateWithoutAuthorAffiliationsInput>
+  connectOrCreate?: Prisma.InstitutionCreateOrConnectWithoutAuthorAffiliationsInput
+  connect?: Prisma.InstitutionWhereUniqueInput
+}
+
+export type InstitutionUpdateOneRequiredWithoutAuthorAffiliationsNestedInput = {
+  create?: Prisma.XOR<Prisma.InstitutionCreateWithoutAuthorAffiliationsInput, Prisma.InstitutionUncheckedCreateWithoutAuthorAffiliationsInput>
+  connectOrCreate?: Prisma.InstitutionCreateOrConnectWithoutAuthorAffiliationsInput
+  upsert?: Prisma.InstitutionUpsertWithoutAuthorAffiliationsInput
+  connect?: Prisma.InstitutionWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.InstitutionUpdateToOneWithWhereWithoutAuthorAffiliationsInput, Prisma.InstitutionUpdateWithoutAuthorAffiliationsInput>, Prisma.InstitutionUncheckedUpdateWithoutAuthorAffiliationsInput>
+}
+
+export type InstitutionCreateWithoutAuthorAffiliationsInput = {
+  id?: string
+  openalexId: string
+  displayName: string
+  acronym?: string | null
+  ror?: string | null
+  countryCode?: string | null
+  type?: string | null
+  homepageUrl?: string | null
+  imageUrl?: string | null
+  worksCount?: number
+  citedByCount?: number
+  hIndex?: number | null
+  i10Index?: number | null
+  twoYearMeanCite?: number | null
+  geo?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  summaryStats?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type InstitutionUncheckedCreateWithoutAuthorAffiliationsInput = {
+  id?: string
+  openalexId: string
+  displayName: string
+  acronym?: string | null
+  ror?: string | null
+  countryCode?: string | null
+  type?: string | null
+  homepageUrl?: string | null
+  imageUrl?: string | null
+  worksCount?: number
+  citedByCount?: number
+  hIndex?: number | null
+  i10Index?: number | null
+  twoYearMeanCite?: number | null
+  geo?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  summaryStats?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  createdAt?: Date | string
+  updatedAt?: Date | string
+}
+
+export type InstitutionCreateOrConnectWithoutAuthorAffiliationsInput = {
+  where: Prisma.InstitutionWhereUniqueInput
+  create: Prisma.XOR<Prisma.InstitutionCreateWithoutAuthorAffiliationsInput, Prisma.InstitutionUncheckedCreateWithoutAuthorAffiliationsInput>
+}
+
+export type InstitutionUpsertWithoutAuthorAffiliationsInput = {
+  update: Prisma.XOR<Prisma.InstitutionUpdateWithoutAuthorAffiliationsInput, Prisma.InstitutionUncheckedUpdateWithoutAuthorAffiliationsInput>
+  create: Prisma.XOR<Prisma.InstitutionCreateWithoutAuthorAffiliationsInput, Prisma.InstitutionUncheckedCreateWithoutAuthorAffiliationsInput>
+  where?: Prisma.InstitutionWhereInput
+}
+
+export type InstitutionUpdateToOneWithWhereWithoutAuthorAffiliationsInput = {
+  where?: Prisma.InstitutionWhereInput
+  data: Prisma.XOR<Prisma.InstitutionUpdateWithoutAuthorAffiliationsInput, Prisma.InstitutionUncheckedUpdateWithoutAuthorAffiliationsInput>
+}
+
+export type InstitutionUpdateWithoutAuthorAffiliationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  openalexId?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  acronym?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  ror?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  countryCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  type?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homepageUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  imageUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  worksCount?: Prisma.IntFieldUpdateOperationsInput | number
+  citedByCount?: Prisma.IntFieldUpdateOperationsInput | number
+  hIndex?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  i10Index?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  twoYearMeanCite?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  geo?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  summaryStats?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+export type InstitutionUncheckedUpdateWithoutAuthorAffiliationsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  openalexId?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  acronym?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  ror?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  countryCode?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  type?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  homepageUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  imageUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  worksCount?: Prisma.IntFieldUpdateOperationsInput | number
+  citedByCount?: Prisma.IntFieldUpdateOperationsInput | number
+  hIndex?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  i10Index?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  twoYearMeanCite?: Prisma.NullableFloatFieldUpdateOperationsInput | number | null
+  geo?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  summaryStats?: Prisma.NullableJsonNullValueInput | runtime.InputJsonValue
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+}
+
+
+/**
+ * Count Type InstitutionCountOutputType
+ */
+
+export type InstitutionCountOutputType = {
+  authorAffiliations: number
+}
+
+export type InstitutionCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  authorAffiliations?: boolean | InstitutionCountOutputTypeCountAuthorAffiliationsArgs
+}
+
+/**
+ * InstitutionCountOutputType without action
+ */
+export type InstitutionCountOutputTypeDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the InstitutionCountOutputType
+   */
+  select?: Prisma.InstitutionCountOutputTypeSelect<ExtArgs> | null
+}
+
+/**
+ * InstitutionCountOutputType without action
+ */
+export type InstitutionCountOutputTypeCountAuthorAffiliationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.AuthorAffiliationWhereInput
+}
 
 
 export type InstitutionSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
@@ -711,6 +866,8 @@ export type InstitutionSelect<ExtArgs extends runtime.Types.Extensions.InternalA
   summaryStats?: boolean
   createdAt?: boolean
   updatedAt?: boolean
+  authorAffiliations?: boolean | Prisma.Institution$authorAffiliationsArgs<ExtArgs>
+  _count?: boolean | Prisma.InstitutionCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["institution"]>
 
 
@@ -737,10 +894,16 @@ export type InstitutionSelectScalar = {
 }
 
 export type InstitutionOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "openalexId" | "displayName" | "acronym" | "ror" | "countryCode" | "type" | "homepageUrl" | "imageUrl" | "worksCount" | "citedByCount" | "hIndex" | "i10Index" | "twoYearMeanCite" | "geo" | "summaryStats" | "createdAt" | "updatedAt", ExtArgs["result"]["institution"]>
+export type InstitutionInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  authorAffiliations?: boolean | Prisma.Institution$authorAffiliationsArgs<ExtArgs>
+  _count?: boolean | Prisma.InstitutionCountOutputTypeDefaultArgs<ExtArgs>
+}
 
 export type $InstitutionPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   name: "Institution"
-  objects: {}
+  objects: {
+    authorAffiliations: Prisma.$AuthorAffiliationPayload<ExtArgs>[]
+  }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     openalexId: string
@@ -1100,6 +1263,7 @@ readonly fields: InstitutionFieldRefs;
  */
 export interface Prisma__InstitutionClient<T, Null = never, ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs, GlobalOmitOptions = {}> extends Prisma.PrismaPromise<T> {
   readonly [Symbol.toStringTag]: "PrismaPromise"
+  authorAffiliations<T extends Prisma.Institution$authorAffiliationsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Institution$authorAffiliationsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$AuthorAffiliationPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1164,6 +1328,10 @@ export type InstitutionFindUniqueArgs<ExtArgs extends runtime.Types.Extensions.I
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
+  /**
    * Filter, which Institution to fetch.
    */
   where: Prisma.InstitutionWhereUniqueInput
@@ -1182,6 +1350,10 @@ export type InstitutionFindUniqueOrThrowArgs<ExtArgs extends runtime.Types.Exten
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
+  /**
    * Filter, which Institution to fetch.
    */
   where: Prisma.InstitutionWhereUniqueInput
@@ -1199,6 +1371,10 @@ export type InstitutionFindFirstArgs<ExtArgs extends runtime.Types.Extensions.In
    * Omit specific fields from the Institution
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
   /**
    * Filter, which Institution to fetch.
    */
@@ -1248,6 +1424,10 @@ export type InstitutionFindFirstOrThrowArgs<ExtArgs extends runtime.Types.Extens
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
+  /**
    * Filter, which Institution to fetch.
    */
   where?: Prisma.InstitutionWhereInput
@@ -1295,6 +1475,10 @@ export type InstitutionFindManyArgs<ExtArgs extends runtime.Types.Extensions.Int
    * Omit specific fields from the Institution
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
   /**
    * Filter, which Institutions to fetch.
    */
@@ -1344,6 +1528,10 @@ export type InstitutionCreateArgs<ExtArgs extends runtime.Types.Extensions.Inter
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
+  /**
    * The data needed to create a Institution.
    */
   data: Prisma.XOR<Prisma.InstitutionCreateInput, Prisma.InstitutionUncheckedCreateInput>
@@ -1372,6 +1560,10 @@ export type InstitutionUpdateArgs<ExtArgs extends runtime.Types.Extensions.Inter
    * Omit specific fields from the Institution
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
   /**
    * The data needed to update a Institution.
    */
@@ -1413,6 +1605,10 @@ export type InstitutionUpsertArgs<ExtArgs extends runtime.Types.Extensions.Inter
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
+  /**
    * The filter to search for the Institution to update in case it exists.
    */
   where: Prisma.InstitutionWhereUniqueInput
@@ -1439,6 +1635,10 @@ export type InstitutionDeleteArgs<ExtArgs extends runtime.Types.Extensions.Inter
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
   /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
+  /**
    * Filter which Institution to delete.
    */
   where: Prisma.InstitutionWhereUniqueInput
@@ -1459,6 +1659,30 @@ export type InstitutionDeleteManyArgs<ExtArgs extends runtime.Types.Extensions.I
 }
 
 /**
+ * Institution.authorAffiliations
+ */
+export type Institution$authorAffiliationsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the AuthorAffiliation
+   */
+  select?: Prisma.AuthorAffiliationSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the AuthorAffiliation
+   */
+  omit?: Prisma.AuthorAffiliationOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.AuthorAffiliationInclude<ExtArgs> | null
+  where?: Prisma.AuthorAffiliationWhereInput
+  orderBy?: Prisma.AuthorAffiliationOrderByWithRelationInput | Prisma.AuthorAffiliationOrderByWithRelationInput[]
+  cursor?: Prisma.AuthorAffiliationWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.AuthorAffiliationScalarFieldEnum | Prisma.AuthorAffiliationScalarFieldEnum[]
+}
+
+/**
  * Institution without action
  */
 export type InstitutionDefaultArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1470,4 +1694,8 @@ export type InstitutionDefaultArgs<ExtArgs extends runtime.Types.Extensions.Inte
    * Omit specific fields from the Institution
    */
   omit?: Prisma.InstitutionOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.InstitutionInclude<ExtArgs> | null
 }
