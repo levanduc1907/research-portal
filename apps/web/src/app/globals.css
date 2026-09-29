@@ -798,10 +798,37 @@ h4,
   display: flex;
 }
 
+.researcher-grid-wrapper {
+  position: relative;
+}
+
+.researcher-grid-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e1e6ec;
+  border-top-color: var(--illini-orange);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
 .researcher-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
+  transition: opacity 0.2s ease;
 }
 
 .researcher-card {

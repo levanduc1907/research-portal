@@ -94,6 +94,9 @@ export function ResearcherDirectory(): React.JSX.Element {
     setPage(1);
   };
 
+  const isLoadingNew =
+    researchersQuery.isFetching && researchersQuery.isPlaceholderData;
+
   return (
     <>
       <section id="faculty" className="portal-container directory">
@@ -112,34 +115,50 @@ export function ResearcherDirectory(): React.JSX.Element {
           />
         </div>
         {researchersResult.data.length ? (
-          <div className="researcher-grid">
-            {researchersResult.data.map((r) => (
-              <Link
-                className="researcher-card"
-                key={r.id}
-                href={`/researchers/${encodeURIComponent(r.slug)}`}
-              >
-                <div className="card-top">
-                  <ResearcherAvatar researcher={r} />
-                </div>
-                <h3>{r.name.replace(/^Dr\. /, "")}</h3>
-                <p className="researcher-title">{r.title || "Researcher"}</p>
-                <p className="researcher-department">
-                  {r.department || "University of Illinois"}
-                </p>
-                <div className="keyword-list">
-                  {r.keywords.slice(0, 3).map((k) => (
-                    <span key={k}>{k}</span>
-                  ))}
-                  {r.keywords.length > 3 && (
-                    <span>+{r.keywords.length - 3}</span>
-                  )}
-                </div>
-                <span className="profile-link">
-                  View profile <span>→</span>
-                </span>
-              </Link>
-            ))}
+          <div className="researcher-grid-wrapper">
+            {isLoadingNew && (
+              <div className="researcher-grid-loading">
+                <div className="loading-spinner" />
+              </div>
+            )}
+            <div
+              className="researcher-grid"
+              style={{ opacity: isLoadingNew ? 0.4 : 1 }}
+            >
+              {researchersResult.data.map((r) => (
+                <Link
+                  className="researcher-card"
+                  key={r.id}
+                  href={`/researchers/${encodeURIComponent(r.slug)}`}
+                >
+                  <div className="card-top">
+                    <ResearcherAvatar researcher={r} />
+                  </div>
+                  <h3>{r.name.replace(/^Dr\. /, "")}</h3>
+                  <p className="researcher-title">{r.title || "Researcher"}</p>
+                  <p className="researcher-department">
+                    {r.department || "University of Illinois"}
+                  </p>
+                  <div className="keyword-list">
+                    {r.keywords.slice(0, 3).map((k) => (
+                      <span key={k}>{k}</span>
+                    ))}
+                    {r.keywords.length > 3 && (
+                      <span>+{r.keywords.length - 3}</span>
+                    )}
+                  </div>
+                  <span className="profile-link">
+                    View profile <span>→</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        ) : researchersQuery.isFetching ? (
+          <div className="researcher-grid-wrapper">
+            <div className="researcher-grid-loading" style={{ position: "relative", minHeight: 300 }}>
+              <div className="loading-spinner" />
+            </div>
           </div>
         ) : (
           <div className="empty-state">
