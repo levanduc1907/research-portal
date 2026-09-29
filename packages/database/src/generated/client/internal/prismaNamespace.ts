@@ -406,6 +406,7 @@ export const ModelName = {
   PaperTopic: 'PaperTopic',
   Researcher: 'Researcher',
   ResearcherKeyword: 'ResearcherKeyword',
+  ResearcherTopic: 'ResearcherTopic',
   ImportRun: 'ImportRun',
   EmbeddingRecord: 'EmbeddingRecord',
   ChatRequest: 'ChatRequest',
@@ -425,7 +426,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "institution" | "paper" | "author" | "authorAffiliation" | "paperAuthor" | "topic" | "paperTopic" | "researcher" | "researcherKeyword" | "importRun" | "embeddingRecord" | "chatRequest" | "aiCredential"
+    modelProps: "institution" | "paper" | "author" | "authorAffiliation" | "paperAuthor" | "topic" | "paperTopic" | "researcher" | "researcherKeyword" | "researcherTopic" | "importRun" | "embeddingRecord" | "chatRequest" | "aiCredential"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1023,6 +1024,72 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    ResearcherTopic: {
+      payload: Prisma.$ResearcherTopicPayload<ExtArgs>
+      fields: Prisma.ResearcherTopicFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.ResearcherTopicFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.ResearcherTopicFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload>
+        }
+        findFirst: {
+          args: Prisma.ResearcherTopicFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.ResearcherTopicFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload>
+        }
+        findMany: {
+          args: Prisma.ResearcherTopicFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload>[]
+        }
+        create: {
+          args: Prisma.ResearcherTopicCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload>
+        }
+        createMany: {
+          args: Prisma.ResearcherTopicCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        delete: {
+          args: Prisma.ResearcherTopicDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload>
+        }
+        update: {
+          args: Prisma.ResearcherTopicUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload>
+        }
+        deleteMany: {
+          args: Prisma.ResearcherTopicDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.ResearcherTopicUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        upsert: {
+          args: Prisma.ResearcherTopicUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$ResearcherTopicPayload>
+        }
+        aggregate: {
+          args: Prisma.ResearcherTopicAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateResearcherTopic>
+        }
+        groupBy: {
+          args: Prisma.ResearcherTopicGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ResearcherTopicGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.ResearcherTopicCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.ResearcherTopicCountAggregateOutputType> | number
+        }
+      }
+    }
     ImportRun: {
       payload: Prisma.$ImportRunPayload<ExtArgs>
       fields: Prisma.ImportRunFieldRefs
@@ -1468,6 +1535,19 @@ export const ResearcherKeywordScalarFieldEnum = {
 export type ResearcherKeywordScalarFieldEnum = (typeof ResearcherKeywordScalarFieldEnum)[keyof typeof ResearcherKeywordScalarFieldEnum]
 
 
+export const ResearcherTopicScalarFieldEnum = {
+  id: 'id',
+  researcherId: 'researcherId',
+  topicId: 'topicId',
+  worksCount: 'worksCount',
+  rank: 'rank',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ResearcherTopicScalarFieldEnum = (typeof ResearcherTopicScalarFieldEnum)[keyof typeof ResearcherTopicScalarFieldEnum]
+
+
 export const ImportRunScalarFieldEnum = {
   id: 'id',
   source: 'source',
@@ -1686,6 +1766,15 @@ export const ResearcherKeywordOrderByRelevanceFieldEnum = {
 } as const
 
 export type ResearcherKeywordOrderByRelevanceFieldEnum = (typeof ResearcherKeywordOrderByRelevanceFieldEnum)[keyof typeof ResearcherKeywordOrderByRelevanceFieldEnum]
+
+
+export const ResearcherTopicOrderByRelevanceFieldEnum = {
+  id: 'id',
+  researcherId: 'researcherId',
+  topicId: 'topicId'
+} as const
+
+export type ResearcherTopicOrderByRelevanceFieldEnum = (typeof ResearcherTopicOrderByRelevanceFieldEnum)[keyof typeof ResearcherTopicOrderByRelevanceFieldEnum]
 
 
 export const ImportRunOrderByRelevanceFieldEnum = {
@@ -1973,6 +2062,7 @@ export type GlobalOmitConfig = {
   paperTopic?: Prisma.PaperTopicOmit
   researcher?: Prisma.ResearcherOmit
   researcherKeyword?: Prisma.ResearcherKeywordOmit
+  researcherTopic?: Prisma.ResearcherTopicOmit
   importRun?: Prisma.ImportRunOmit
   embeddingRecord?: Prisma.EmbeddingRecordOmit
   chatRequest?: Prisma.ChatRequestOmit

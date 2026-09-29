@@ -60,6 +60,7 @@ export const ModelName = {
   PaperTopic: 'PaperTopic',
   Researcher: 'Researcher',
   ResearcherKeyword: 'ResearcherKeyword',
+  ResearcherTopic: 'ResearcherTopic',
   ImportRun: 'ImportRun',
   EmbeddingRecord: 'EmbeddingRecord',
   ChatRequest: 'ChatRequest',
@@ -222,6 +223,19 @@ export const ResearcherKeywordScalarFieldEnum = {
 } as const
 
 export type ResearcherKeywordScalarFieldEnum = (typeof ResearcherKeywordScalarFieldEnum)[keyof typeof ResearcherKeywordScalarFieldEnum]
+
+
+export const ResearcherTopicScalarFieldEnum = {
+  id: 'id',
+  researcherId: 'researcherId',
+  topicId: 'topicId',
+  worksCount: 'worksCount',
+  rank: 'rank',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type ResearcherTopicScalarFieldEnum = (typeof ResearcherTopicScalarFieldEnum)[keyof typeof ResearcherTopicScalarFieldEnum]
 
 
 export const ImportRunScalarFieldEnum = {
@@ -442,6 +456,15 @@ export const ResearcherKeywordOrderByRelevanceFieldEnum = {
 } as const
 
 export type ResearcherKeywordOrderByRelevanceFieldEnum = (typeof ResearcherKeywordOrderByRelevanceFieldEnum)[keyof typeof ResearcherKeywordOrderByRelevanceFieldEnum]
+
+
+export const ResearcherTopicOrderByRelevanceFieldEnum = {
+  id: 'id',
+  researcherId: 'researcherId',
+  topicId: 'topicId'
+} as const
+
+export type ResearcherTopicOrderByRelevanceFieldEnum = (typeof ResearcherTopicOrderByRelevanceFieldEnum)[keyof typeof ResearcherTopicOrderByRelevanceFieldEnum]
 
 
 export const ImportRunOrderByRelevanceFieldEnum = {

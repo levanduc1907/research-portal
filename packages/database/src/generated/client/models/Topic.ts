@@ -266,6 +266,7 @@ export type TopicWhereInput = {
   createdAt?: Prisma.DateTimeFilter<"Topic"> | Date | string
   papers?: Prisma.PaperTopicListRelationFilter
   primaryPapers?: Prisma.PaperListRelationFilter
+  researchers?: Prisma.ResearcherTopicListRelationFilter
 }
 
 export type TopicOrderByWithRelationInput = {
@@ -282,6 +283,7 @@ export type TopicOrderByWithRelationInput = {
   createdAt?: Prisma.SortOrder
   papers?: Prisma.PaperTopicOrderByRelationAggregateInput
   primaryPapers?: Prisma.PaperOrderByRelationAggregateInput
+  researchers?: Prisma.ResearcherTopicOrderByRelationAggregateInput
   _relevance?: Prisma.TopicOrderByRelevanceInput
 }
 
@@ -302,6 +304,7 @@ export type TopicWhereUniqueInput = Prisma.AtLeast<{
   createdAt?: Prisma.DateTimeFilter<"Topic"> | Date | string
   papers?: Prisma.PaperTopicListRelationFilter
   primaryPapers?: Prisma.PaperListRelationFilter
+  researchers?: Prisma.ResearcherTopicListRelationFilter
 }, "id" | "openalexId">
 
 export type TopicOrderByWithAggregationInput = {
@@ -354,6 +357,7 @@ export type TopicCreateInput = {
   createdAt?: Date | string
   papers?: Prisma.PaperTopicCreateNestedManyWithoutTopicInput
   primaryPapers?: Prisma.PaperCreateNestedManyWithoutPrimaryTopicInput
+  researchers?: Prisma.ResearcherTopicCreateNestedManyWithoutTopicInput
 }
 
 export type TopicUncheckedCreateInput = {
@@ -370,6 +374,7 @@ export type TopicUncheckedCreateInput = {
   createdAt?: Date | string
   papers?: Prisma.PaperTopicUncheckedCreateNestedManyWithoutTopicInput
   primaryPapers?: Prisma.PaperUncheckedCreateNestedManyWithoutPrimaryTopicInput
+  researchers?: Prisma.ResearcherTopicUncheckedCreateNestedManyWithoutTopicInput
 }
 
 export type TopicUpdateInput = {
@@ -386,6 +391,7 @@ export type TopicUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   papers?: Prisma.PaperTopicUpdateManyWithoutTopicNestedInput
   primaryPapers?: Prisma.PaperUpdateManyWithoutPrimaryTopicNestedInput
+  researchers?: Prisma.ResearcherTopicUpdateManyWithoutTopicNestedInput
 }
 
 export type TopicUncheckedUpdateInput = {
@@ -402,6 +408,7 @@ export type TopicUncheckedUpdateInput = {
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   papers?: Prisma.PaperTopicUncheckedUpdateManyWithoutTopicNestedInput
   primaryPapers?: Prisma.PaperUncheckedUpdateManyWithoutPrimaryTopicNestedInput
+  researchers?: Prisma.ResearcherTopicUncheckedUpdateManyWithoutTopicNestedInput
 }
 
 export type TopicCreateManyInput = {
@@ -542,6 +549,20 @@ export type TopicUpdateOneRequiredWithoutPapersNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.TopicUpdateToOneWithWhereWithoutPapersInput, Prisma.TopicUpdateWithoutPapersInput>, Prisma.TopicUncheckedUpdateWithoutPapersInput>
 }
 
+export type TopicCreateNestedOneWithoutResearchersInput = {
+  create?: Prisma.XOR<Prisma.TopicCreateWithoutResearchersInput, Prisma.TopicUncheckedCreateWithoutResearchersInput>
+  connectOrCreate?: Prisma.TopicCreateOrConnectWithoutResearchersInput
+  connect?: Prisma.TopicWhereUniqueInput
+}
+
+export type TopicUpdateOneRequiredWithoutResearchersNestedInput = {
+  create?: Prisma.XOR<Prisma.TopicCreateWithoutResearchersInput, Prisma.TopicUncheckedCreateWithoutResearchersInput>
+  connectOrCreate?: Prisma.TopicCreateOrConnectWithoutResearchersInput
+  upsert?: Prisma.TopicUpsertWithoutResearchersInput
+  connect?: Prisma.TopicWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.TopicUpdateToOneWithWhereWithoutResearchersInput, Prisma.TopicUpdateWithoutResearchersInput>, Prisma.TopicUncheckedUpdateWithoutResearchersInput>
+}
+
 export type TopicCreateWithoutPrimaryPapersInput = {
   id?: string
   openalexId: string
@@ -555,6 +576,7 @@ export type TopicCreateWithoutPrimaryPapersInput = {
   worksCount?: number
   createdAt?: Date | string
   papers?: Prisma.PaperTopicCreateNestedManyWithoutTopicInput
+  researchers?: Prisma.ResearcherTopicCreateNestedManyWithoutTopicInput
 }
 
 export type TopicUncheckedCreateWithoutPrimaryPapersInput = {
@@ -570,6 +592,7 @@ export type TopicUncheckedCreateWithoutPrimaryPapersInput = {
   worksCount?: number
   createdAt?: Date | string
   papers?: Prisma.PaperTopicUncheckedCreateNestedManyWithoutTopicInput
+  researchers?: Prisma.ResearcherTopicUncheckedCreateNestedManyWithoutTopicInput
 }
 
 export type TopicCreateOrConnectWithoutPrimaryPapersInput = {
@@ -601,6 +624,7 @@ export type TopicUpdateWithoutPrimaryPapersInput = {
   worksCount?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   papers?: Prisma.PaperTopicUpdateManyWithoutTopicNestedInput
+  researchers?: Prisma.ResearcherTopicUpdateManyWithoutTopicNestedInput
 }
 
 export type TopicUncheckedUpdateWithoutPrimaryPapersInput = {
@@ -616,6 +640,7 @@ export type TopicUncheckedUpdateWithoutPrimaryPapersInput = {
   worksCount?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   papers?: Prisma.PaperTopicUncheckedUpdateManyWithoutTopicNestedInput
+  researchers?: Prisma.ResearcherTopicUncheckedUpdateManyWithoutTopicNestedInput
 }
 
 export type TopicCreateWithoutPapersInput = {
@@ -631,6 +656,7 @@ export type TopicCreateWithoutPapersInput = {
   worksCount?: number
   createdAt?: Date | string
   primaryPapers?: Prisma.PaperCreateNestedManyWithoutPrimaryTopicInput
+  researchers?: Prisma.ResearcherTopicCreateNestedManyWithoutTopicInput
 }
 
 export type TopicUncheckedCreateWithoutPapersInput = {
@@ -646,6 +672,7 @@ export type TopicUncheckedCreateWithoutPapersInput = {
   worksCount?: number
   createdAt?: Date | string
   primaryPapers?: Prisma.PaperUncheckedCreateNestedManyWithoutPrimaryTopicInput
+  researchers?: Prisma.ResearcherTopicUncheckedCreateNestedManyWithoutTopicInput
 }
 
 export type TopicCreateOrConnectWithoutPapersInput = {
@@ -677,6 +704,7 @@ export type TopicUpdateWithoutPapersInput = {
   worksCount?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   primaryPapers?: Prisma.PaperUpdateManyWithoutPrimaryTopicNestedInput
+  researchers?: Prisma.ResearcherTopicUpdateManyWithoutTopicNestedInput
 }
 
 export type TopicUncheckedUpdateWithoutPapersInput = {
@@ -692,6 +720,87 @@ export type TopicUncheckedUpdateWithoutPapersInput = {
   worksCount?: Prisma.IntFieldUpdateOperationsInput | number
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   primaryPapers?: Prisma.PaperUncheckedUpdateManyWithoutPrimaryTopicNestedInput
+  researchers?: Prisma.ResearcherTopicUncheckedUpdateManyWithoutTopicNestedInput
+}
+
+export type TopicCreateWithoutResearchersInput = {
+  id?: string
+  openalexId: string
+  displayName: string
+  subfieldId?: string | null
+  subfieldName?: string | null
+  fieldId?: string | null
+  fieldName?: string | null
+  domainId?: string | null
+  domainName?: string | null
+  worksCount?: number
+  createdAt?: Date | string
+  papers?: Prisma.PaperTopicCreateNestedManyWithoutTopicInput
+  primaryPapers?: Prisma.PaperCreateNestedManyWithoutPrimaryTopicInput
+}
+
+export type TopicUncheckedCreateWithoutResearchersInput = {
+  id?: string
+  openalexId: string
+  displayName: string
+  subfieldId?: string | null
+  subfieldName?: string | null
+  fieldId?: string | null
+  fieldName?: string | null
+  domainId?: string | null
+  domainName?: string | null
+  worksCount?: number
+  createdAt?: Date | string
+  papers?: Prisma.PaperTopicUncheckedCreateNestedManyWithoutTopicInput
+  primaryPapers?: Prisma.PaperUncheckedCreateNestedManyWithoutPrimaryTopicInput
+}
+
+export type TopicCreateOrConnectWithoutResearchersInput = {
+  where: Prisma.TopicWhereUniqueInput
+  create: Prisma.XOR<Prisma.TopicCreateWithoutResearchersInput, Prisma.TopicUncheckedCreateWithoutResearchersInput>
+}
+
+export type TopicUpsertWithoutResearchersInput = {
+  update: Prisma.XOR<Prisma.TopicUpdateWithoutResearchersInput, Prisma.TopicUncheckedUpdateWithoutResearchersInput>
+  create: Prisma.XOR<Prisma.TopicCreateWithoutResearchersInput, Prisma.TopicUncheckedCreateWithoutResearchersInput>
+  where?: Prisma.TopicWhereInput
+}
+
+export type TopicUpdateToOneWithWhereWithoutResearchersInput = {
+  where?: Prisma.TopicWhereInput
+  data: Prisma.XOR<Prisma.TopicUpdateWithoutResearchersInput, Prisma.TopicUncheckedUpdateWithoutResearchersInput>
+}
+
+export type TopicUpdateWithoutResearchersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  openalexId?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  subfieldId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subfieldName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fieldId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fieldName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  domainId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  domainName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  worksCount?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  papers?: Prisma.PaperTopicUpdateManyWithoutTopicNestedInput
+  primaryPapers?: Prisma.PaperUpdateManyWithoutPrimaryTopicNestedInput
+}
+
+export type TopicUncheckedUpdateWithoutResearchersInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  openalexId?: Prisma.StringFieldUpdateOperationsInput | string
+  displayName?: Prisma.StringFieldUpdateOperationsInput | string
+  subfieldId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  subfieldName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fieldId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  fieldName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  domainId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  domainName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  worksCount?: Prisma.IntFieldUpdateOperationsInput | number
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  papers?: Prisma.PaperTopicUncheckedUpdateManyWithoutTopicNestedInput
+  primaryPapers?: Prisma.PaperUncheckedUpdateManyWithoutPrimaryTopicNestedInput
 }
 
 
@@ -702,11 +811,13 @@ export type TopicUncheckedUpdateWithoutPapersInput = {
 export type TopicCountOutputType = {
   papers: number
   primaryPapers: number
+  researchers: number
 }
 
 export type TopicCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   papers?: boolean | TopicCountOutputTypeCountPapersArgs
   primaryPapers?: boolean | TopicCountOutputTypeCountPrimaryPapersArgs
+  researchers?: boolean | TopicCountOutputTypeCountResearchersArgs
 }
 
 /**
@@ -733,6 +844,13 @@ export type TopicCountOutputTypeCountPrimaryPapersArgs<ExtArgs extends runtime.T
   where?: Prisma.PaperWhereInput
 }
 
+/**
+ * TopicCountOutputType without action
+ */
+export type TopicCountOutputTypeCountResearchersArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.ResearcherTopicWhereInput
+}
+
 
 export type TopicSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -748,6 +866,7 @@ export type TopicSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   createdAt?: boolean
   papers?: boolean | Prisma.Topic$papersArgs<ExtArgs>
   primaryPapers?: boolean | Prisma.Topic$primaryPapersArgs<ExtArgs>
+  researchers?: boolean | Prisma.Topic$researchersArgs<ExtArgs>
   _count?: boolean | Prisma.TopicCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["topic"]>
 
@@ -771,6 +890,7 @@ export type TopicOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = ru
 export type TopicInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   papers?: boolean | Prisma.Topic$papersArgs<ExtArgs>
   primaryPapers?: boolean | Prisma.Topic$primaryPapersArgs<ExtArgs>
+  researchers?: boolean | Prisma.Topic$researchersArgs<ExtArgs>
   _count?: boolean | Prisma.TopicCountOutputTypeDefaultArgs<ExtArgs>
 }
 
@@ -779,6 +899,7 @@ export type $TopicPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs 
   objects: {
     papers: Prisma.$PaperTopicPayload<ExtArgs>[]
     primaryPapers: Prisma.$PaperPayload<ExtArgs>[]
+    researchers: Prisma.$ResearcherTopicPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1134,6 +1255,7 @@ export interface Prisma__TopicClient<T, Null = never, ExtArgs extends runtime.Ty
   readonly [Symbol.toStringTag]: "PrismaPromise"
   papers<T extends Prisma.Topic$papersArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Topic$papersArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PaperTopicPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   primaryPapers<T extends Prisma.Topic$primaryPapersArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Topic$primaryPapersArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$PaperPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  researchers<T extends Prisma.Topic$researchersArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.Topic$researchersArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ResearcherTopicPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -1567,6 +1689,30 @@ export type Topic$primaryPapersArgs<ExtArgs extends runtime.Types.Extensions.Int
   take?: number
   skip?: number
   distinct?: Prisma.PaperScalarFieldEnum | Prisma.PaperScalarFieldEnum[]
+}
+
+/**
+ * Topic.researchers
+ */
+export type Topic$researchersArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the ResearcherTopic
+   */
+  select?: Prisma.ResearcherTopicSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the ResearcherTopic
+   */
+  omit?: Prisma.ResearcherTopicOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.ResearcherTopicInclude<ExtArgs> | null
+  where?: Prisma.ResearcherTopicWhereInput
+  orderBy?: Prisma.ResearcherTopicOrderByWithRelationInput | Prisma.ResearcherTopicOrderByWithRelationInput[]
+  cursor?: Prisma.ResearcherTopicWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.ResearcherTopicScalarFieldEnum | Prisma.ResearcherTopicScalarFieldEnum[]
 }
 
 /**

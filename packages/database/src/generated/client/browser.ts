@@ -6,7 +6,7 @@
 /*
  * This file should be your main import to use Prisma-related types and utilities in a browser. 
  * Use it to get access to models, enums, and input types.
- *
+ * 
  * This file does not contain a `PrismaClient` class, nor several other helpers that are intended as server-side only.
  * See `client.ts` for the standard, server-side entry point.
  *
@@ -34,7 +34,7 @@ export type Paper = Prisma.PaperModel
 export type Author = Prisma.AuthorModel
 /**
  * Model AuthorAffiliation
- *
+ * 
  */
 export type AuthorAffiliation = Prisma.AuthorAffiliationModel
 /**
@@ -62,6 +62,11 @@ export type Researcher = Prisma.ResearcherModel
  * 
  */
 export type ResearcherKeyword = Prisma.ResearcherKeywordModel
+/**
+ * Model ResearcherTopic
+ * 
+ */
+export type ResearcherTopic = Prisma.ResearcherTopicModel
 /**
  * Model ImportRun
  * 

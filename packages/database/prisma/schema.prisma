@@ -148,7 +148,8 @@ model Topic {
   createdAt    DateTime @default(now()) @map("created_at")
 
   papers        PaperTopic[]
-  primaryPapers Paper[]      @relation("PrimaryPaperTopic")
+  primaryPapers Paper[]           @relation("PrimaryPaperTopic")
+  researchers   ResearcherTopic[]
 
   @@index([domainName])
   @@index([fieldName])
@@ -192,6 +193,7 @@ model Researcher {
   updatedAt    DateTime @updatedAt @map("updated_at")
 
   keywords ResearcherKeyword[]
+  topics   ResearcherTopic[]
 
   @@index([name])
   @@index([department])
@@ -210,6 +212,23 @@ model ResearcherKeyword {
   @@index([researcherId])
   @@index([keyword])
   @@map("researcher_keywords")
+}
+
+model ResearcherTopic {
+  id           String     @id @default(uuid())
+  researcherId String     @map("researcher_id")
+  researcher   Researcher @relation(fields: [researcherId], references: [id], onDelete: Cascade)
+  topicId      String     @map("topic_id")
+  topic        Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  worksCount   Int        @default(0) @map("works_count")
+  rank         Int        @default(0)
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@unique([researcherId, topicId])
+  @@index([researcherId, rank])
+  @@index([topicId, worksCount])
+  @@map("researcher_topics")
 }
 
 model ImportRun {
