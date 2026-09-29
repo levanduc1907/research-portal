@@ -49,6 +49,13 @@ export class ChatResponseGeneratorService {
     signal?: AbortSignal,
     onToken?: (token: string) => void,
   ): Promise<string> {
+    const startedAt = Date.now();
+    this.trace.log(requestId, "response_generation.input", {
+      query,
+      history,
+      facts,
+      evidence,
+    });
     const prompt = this.buildPrompt(query, evidence, history, facts);
     this.trace.log(requestId, "response_generation.prompt", { prompt });
     let answer = "";
@@ -75,6 +82,7 @@ export class ChatResponseGeneratorService {
     this.trace.log(requestId, "response_generation.completed", {
       answer,
       characterCount: answer.length,
+      latencyMs: Date.now() - startedAt,
     });
     return answer;
   }

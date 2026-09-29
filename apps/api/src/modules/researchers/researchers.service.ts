@@ -163,23 +163,23 @@ export class ResearchersService {
         const abbreviations = searchTerms.filter(
           (term) => normalizeResearchSearchTerm(term).length <= 3,
         );
-        const keywordMatches = [
-          ...phraseTerms.map((term) => ({ keyword: { contains: term } })),
+        const topicNameMatches = [
+          ...phraseTerms.map((term) => ({ displayName: { contains: term } })),
           ...abbreviations.flatMap((term) => [
-            { keyword: { equals: term } },
-            { keyword: { startsWith: `${term} ` } },
-            { keyword: { startsWith: `${term}-` } },
-            { keyword: { contains: ` ${term} ` } },
-            { keyword: { contains: ` ${term}-` } },
-            { keyword: { endsWith: ` ${term}` } },
+            { displayName: { equals: term } },
+            { displayName: { startsWith: `${term} ` } },
+            { displayName: { startsWith: `${term}-` } },
+            { displayName: { contains: ` ${term} ` } },
+            { displayName: { contains: ` ${term}-` } },
+            { displayName: { endsWith: ` ${term}` } },
           ]),
         ];
         const directMatches = [
           { name: { contains: params.query } },
           ...phraseTerms.map((term) => ({ bio: { contains: term } })),
           {
-            keywords: {
-              some: { OR: keywordMatches },
+            topics: {
+              some: { topic: { OR: topicNameMatches } },
             },
           },
         ];
@@ -223,7 +223,13 @@ export class ResearchersService {
           skip,
           take: limit,
           orderBy: { citedByCount: "desc" },
-          include: { keywords: true, author: true },
+          include: {
+            topics: {
+              orderBy: { rank: "asc" },
+              include: { topic: true },
+            },
+            author: true,
+          },
         }),
       ]);
 
@@ -244,7 +250,7 @@ export class ResearchersService {
         photoUrl: r.photoUrl,
         worksCount: r.worksCount,
         citedByCount: r.citedByCount,
-        keywords: r.keywords.map((k) => k.keyword),
+        keywords: r.topics.map(({ topic }) => topic.displayName),
       }));
 
       const totalPages = Math.ceil(total / limit);
@@ -292,7 +298,13 @@ export class ResearchersService {
     try {
       const record = await this.prisma.researcher.findFirst({
         where: this.lookupWhere(id),
-        include: { keywords: true, author: true },
+        include: {
+          topics: {
+            orderBy: { rank: "asc" },
+            include: { topic: true },
+          },
+          author: true,
+        },
       });
 
       if (!record) {
@@ -330,7 +342,7 @@ export class ResearchersService {
         photoUrl: record.photoUrl,
         worksCount: Math.max(record.worksCount, linkedWorksCount),
         citedByCount: Math.max(record.citedByCount, linkedCitations),
-        keywords: record.keywords.map((k) => k.keyword),
+        keywords: record.topics.map(({ topic }) => topic.displayName),
       };
     } catch (e: any) {
       if (e instanceof NotFoundException) throw e;

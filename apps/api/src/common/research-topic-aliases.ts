@@ -5,6 +5,16 @@ export interface ResearchTopicAliasGroup {
 
 export const RESEARCH_TOPIC_ALIAS_GROUPS: readonly ResearchTopicAliasGroup[] = [
   {
+    canonical: "Explainable AI",
+    aliases: [
+      "XAI",
+      "explainable artificial intelligence",
+      "interpretable AI",
+      "interpretable machine learning",
+      "model interpretability",
+    ],
+  },
+  {
     canonical: "Artificial Intelligence",
     aliases: ["AI", "machine intelligence", "trí tuệ nhân tạo"],
   },
@@ -184,8 +194,10 @@ export function findResearchTopicAliasGroups(
     [group.canonical, ...group.aliases].some((term) => {
       const normalizedTerm = normalizeResearchSearchTerm(term);
       return (
-        containsTerm(normalizedQuery, normalizedTerm) ||
-        (allowPartialMatch && normalizedTerm.includes(normalizedQuery))
+        normalizedQuery === normalizedTerm ||
+        (allowPartialMatch &&
+          (containsTerm(normalizedQuery, normalizedTerm) ||
+            normalizedTerm.includes(normalizedQuery)))
       );
     }),
   );
@@ -195,11 +207,21 @@ export function expandResearchTopicTerms(value: string): string[] {
   const query = value.trim();
   if (!query) return [];
   const expanded = new Set<string>([query]);
+  const matchingGroups = findResearchTopicAliasGroups(query);
 
-  for (const group of findResearchTopicAliasGroups(query)) {
+  // Only an exact canonical topic or exact alias expands. A specialist phrase
+  // such as "explainable AI" must never inherit every generic "AI" alias.
+  for (const group of matchingGroups) {
     expanded.add(group.canonical);
     group.aliases.forEach((alias) => expanded.add(alias));
   }
 
-  return [...expanded].slice(0, 20);
+  const uniqueTerms = new Map<string, string>();
+  for (const term of expanded) {
+    const normalized = normalizeResearchSearchTerm(term);
+    if (normalized && !uniqueTerms.has(normalized)) {
+      uniqueTerms.set(normalized, term);
+    }
+  }
+  return [...uniqueTerms.values()].slice(0, 20);
 }

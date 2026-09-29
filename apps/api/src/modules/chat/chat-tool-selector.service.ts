@@ -15,6 +15,7 @@ export class ChatToolSelectorService {
     classification: ChatIntentClassification,
     requestId = "unary",
   ): ChatToolSelection {
+    this.trace.log(requestId, "tool_selection.input", { classification });
     const toolCalls = toolCallsForClassification(classification);
     const route = this.resolveRoute(classification, toolCalls);
     const selection: ChatToolSelection = {

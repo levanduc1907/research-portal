@@ -27,22 +27,38 @@ export class ChatToolExecutorService {
 
     const results = await Promise.all(
       safeCalls.map(async (call) => {
+        const startedAt = Date.now();
         const handler = handlers[call.name];
         if (!handler) {
-          return {
+          const result = {
             evidence: [],
             facts: [`Tool ${call.name} is not available.`],
           } satisfies ChatToolResult<T>;
+          this.trace.log(requestId, "tools.call_completed", {
+            call,
+            output: result,
+            latencyMs: Date.now() - startedAt,
+          });
+          return result;
         }
         this.trace.log(requestId, "tools.call_started", { call });
-        const result = await handler(call);
-        this.trace.log(requestId, "tools.call_completed", {
-          callId: call.id,
-          tool: call.name,
-          evidenceCount: result.evidence.length,
-          facts: result.facts,
-        });
-        return result;
+        try {
+          const result = await handler(call);
+          this.trace.log(requestId, "tools.call_completed", {
+            call,
+            output: result,
+            evidenceCount: result.evidence.length,
+            latencyMs: Date.now() - startedAt,
+          });
+          return result;
+        } catch (error) {
+          this.trace.log(requestId, "tools.call_failed", {
+            call,
+            error: error instanceof Error ? error.message : String(error),
+            latencyMs: Date.now() - startedAt,
+          });
+          throw error;
+        }
       }),
     );
 
@@ -59,6 +75,7 @@ export class ChatToolExecutorService {
       toolCount: safeCalls.length,
       evidenceCount: merged.evidence.length,
       factCount: merged.facts.length,
+      output: merged,
     });
     return merged;
   }

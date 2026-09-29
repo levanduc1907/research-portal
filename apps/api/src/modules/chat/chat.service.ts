@@ -22,7 +22,10 @@ import {
 } from "./chat-tool-executor.service";
 import { ChatToolSelectorService } from "./chat-tool-selector.service";
 import { ChatResponseGeneratorService } from "./chat-response-generator.service";
-import { expandResearchTopicTerms } from "../../common/research-topic-aliases";
+import {
+  expandResearchTopicTerms,
+  normalizeResearchSearchTerm,
+} from "../../common/research-topic-aliases";
 import {
   InstitutionService,
   UIUC_INSTITUTION_CONTEXT,
@@ -99,6 +102,34 @@ const PAPER_EVIDENCE_SELECT = {
 type PaperEvidenceRecord = Prisma.PaperGetPayload<{
   select: typeof PAPER_EVIDENCE_SELECT;
 }>;
+
+function buildTopicPhraseFilters(
+  term: string,
+  includeAbstract = true,
+): Prisma.PaperWhereInput[] {
+  const normalized = normalizeResearchSearchTerm(term);
+  if (!normalized) return [];
+
+  // Acronyms must be exact topic labels. A substring search for AI/ML/XAI
+  // would match unrelated words and make a specialist topic far too broad.
+  if (normalized.length <= 3) {
+    return [
+      { primaryTopic: { is: { displayName: { equals: term } } } },
+      { topics: { some: { topic: { displayName: { equals: term } } } } },
+    ];
+  }
+
+  // Multi-word aliases remain intact. `contains` matches the complete phrase,
+  // never its individual tokens.
+  return [
+    { title: { contains: term } },
+    ...(includeAbstract
+      ? ([{ abstract: { contains: term } }] satisfies Prisma.PaperWhereInput[])
+      : []),
+    { primaryTopic: { is: { displayName: { contains: term } } } },
+    { topics: { some: { topic: { displayName: { contains: term } } } } },
+  ];
+}
 
 @Injectable()
 export class ChatService {
@@ -924,56 +955,46 @@ export class ChatService {
       };
     }
 
-    const [researcher, linkedPublicationCount, paperTopics] = await Promise.all(
-      [
-        this.prisma.researcher.findUnique({
-          where: { authorId: resolved.authorId },
-          select: {
-            name: true,
-            email: true,
-            department: true,
-            title: true,
-            bio: true,
-            profileUrl: true,
-            worksCount: true,
-            citedByCount: true,
-            keywords: {
-              orderBy: { keyword: "asc" },
-              take: 20,
-              select: { keyword: true },
+    const [researcher, linkedPublicationCount] = await Promise.all([
+      this.prisma.researcher.findUnique({
+        where: { authorId: resolved.authorId },
+        select: {
+          name: true,
+          email: true,
+          department: true,
+          title: true,
+          bio: true,
+          profileUrl: true,
+          worksCount: true,
+          citedByCount: true,
+          topics: {
+            orderBy: { rank: "asc" },
+            take: 20,
+            select: {
+              worksCount: true,
+              topic: { select: { displayName: true } },
             },
-            author: {
-              select: {
-                displayName: true,
-                openalexId: true,
-                orcid: true,
-                affiliations: {
-                  where: { isCurrent: true },
-                  take: 3,
-                  select: {
-                    institution: { select: { displayName: true } },
-                  },
+          },
+          author: {
+            select: {
+              displayName: true,
+              openalexId: true,
+              orcid: true,
+              affiliations: {
+                where: { isCurrent: true },
+                take: 3,
+                select: {
+                  institution: { select: { displayName: true } },
                 },
               },
             },
           },
-        }),
-        this.prisma.paper.count({
-          where: { authors: { some: { authorId: resolved.authorId } } },
-        }),
-        this.prisma.paperTopic.findMany({
-          where: {
-            paper: { authors: { some: { authorId: resolved.authorId } } },
-          },
-          orderBy: { score: "desc" },
-          take: 1_500,
-          select: {
-            score: true,
-            topic: { select: { displayName: true } },
-          },
-        }),
-      ],
-    );
+        },
+      }),
+      this.prisma.paper.count({
+        where: { authors: { some: { authorId: resolved.authorId } } },
+      }),
+    ]);
     if (!researcher) {
       return {
         evidence: [],
@@ -983,22 +1004,10 @@ export class ChatService {
       };
     }
 
-    const topicScores = new Map<string, { count: number; score: number }>();
-    for (const paperTopic of paperTopics) {
-      const name = paperTopic.topic.displayName.trim();
-      if (!name) continue;
-      const current = topicScores.get(name) ?? { count: 0, score: 0 };
-      current.count += 1;
-      current.score += paperTopic.score;
-      topicScores.set(name, current);
-    }
-    const inferredResearchAreas = [...topicScores.entries()]
-      .sort(
-        ([, left], [, right]) =>
-          right.count - left.count || right.score - left.score,
-      )
-      .slice(0, 8)
-      .map(([name, stats]) => `${name} (${stats.count} linked papers)`);
+    const openAlexResearchAreas = researcher.topics.map(
+      ({ topic, worksCount }) =>
+        `${topic.displayName} (${worksCount} OpenAlex works)`,
+    );
 
     const fields = [
       `name=${researcher.name}`,
@@ -1014,11 +1023,8 @@ export class ChatService {
       researcher.author?.openalexId
         ? `OpenAlex author ID=${researcher.author.openalexId}`
         : null,
-      researcher.keywords.length
-        ? `research keywords=${researcher.keywords.map(({ keyword }) => keyword).join(", ")}`
-        : null,
-      inferredResearchAreas.length
-        ? `research areas inferred from linked OpenAlex paper topics=${inferredResearchAreas.join(", ")}`
+      openAlexResearchAreas.length
+        ? `OpenAlex author topics=${openAlexResearchAreas.join(", ")}`
         : null,
       researcher.bio ? `bio=${researcher.bio}` : null,
       researcher.profileUrl ? `profile URL=${researcher.profileUrl}` : null,
@@ -1037,7 +1043,7 @@ export class ChatService {
       resolved,
       researcher,
       linkedPublicationCount,
-      inferredResearchAreas,
+      openAlexResearchAreas,
       facts: result.facts,
     });
     return result;
@@ -1190,45 +1196,74 @@ export class ChatService {
     const subject = flow.topic || flow.semanticQuery || query;
     const terms = expandResearchTopicTerms(subject);
     const topicWhere: Prisma.PaperWhereInput = {
-      OR: terms.flatMap((term) => [
-        { title: { contains: term } },
-        { abstract: { contains: term } },
-        { primaryTopic: { is: { displayName: { contains: term } } } },
-        { topics: { some: { topic: { displayName: { contains: term } } } } },
-      ]),
+      OR: terms.flatMap((term) => buildTopicPhraseFilters(term, false)),
     };
-    const grouped = await this.prisma.paperAuthor.groupBy({
-      by: ["authorId"],
-      where: { paper: topicWhere },
-      _count: { _all: true },
-      orderBy: { _count: { authorId: "desc" } },
-      take: 50,
-    });
-    const authors = await this.prisma.author.findMany({
+    const topicNameMatchers: Prisma.TopicWhereInput[] = terms.flatMap(
+      (term): Prisma.TopicWhereInput[] => {
+        const normalized = normalizeResearchSearchTerm(term);
+        return normalized.length <= 3
+          ? [{ displayName: { equals: term } }]
+          : [{ displayName: { contains: term } }];
+      },
+    );
+    const profiles = await this.prisma.researcher.findMany({
       where: {
-        id: { in: grouped.map((row) => row.authorId) },
-        researcher: { isNot: null },
+        authorId: { not: null },
+        topics: { some: { topic: { OR: topicNameMatchers } } },
       },
       select: {
-        id: true,
-        displayName: true,
-        researcher: {
-          select: { name: true, title: true, department: true, slug: true },
+        authorId: true,
+        name: true,
+        title: true,
+        department: true,
+        slug: true,
+        topics: {
+          where: { topic: { OR: topicNameMatchers } },
+          select: {
+            worksCount: true,
+            topic: { select: { displayName: true } },
+          },
         },
       },
+      take: 50,
     });
+    const authorIds = profiles.flatMap(({ authorId }) =>
+      authorId ? [authorId] : [],
+    );
+    const grouped = authorIds.length
+      ? await this.prisma.paperAuthor.groupBy({
+          by: ["authorId"],
+          where: { authorId: { in: authorIds }, paper: topicWhere },
+          _count: { _all: true },
+        })
+      : [];
     const counts = new Map(
       grouped.map((row) => [row.authorId, row._count._all]),
     );
-    const researchers = authors
-      .map((author) => ({
-        name: author.researcher?.name || author.displayName,
-        title: author.researcher?.title,
-        department: author.researcher?.department,
-        slug: author.researcher?.slug,
-        matchingPapers: counts.get(author.id) ?? 0,
+    const researchers = profiles
+      .map((researcher) => ({
+        name: researcher.name,
+        title: researcher.title,
+        department: researcher.department,
+        slug: researcher.slug,
+        matchingTopics: researcher.topics.map(({ topic, worksCount }) => ({
+          name: topic.displayName,
+          worksCount,
+        })),
+        matchingTopicWorks: researcher.topics.reduce(
+          (sum, topic) => sum + topic.worksCount,
+          0,
+        ),
+        matchingPapers: researcher.authorId
+          ? (counts.get(researcher.authorId) ?? 0)
+          : 0,
       }))
-      .sort((left, right) => right.matchingPapers - left.matchingPapers)
+      .sort(
+        (left, right) =>
+          right.matchingTopicWorks - left.matchingTopicWorks ||
+          right.matchingPapers - left.matchingPapers ||
+          left.name.localeCompare(right.name),
+      )
       .slice(0, flow.limit);
     this.trace.log(requestId, "database.researchers_by_topic", {
       subject,
@@ -1242,14 +1277,14 @@ export class ChatService {
             `Researchers with indexed publications matching "${subject}": ${researchers
               .map(
                 (researcher, index) =>
-                  `${index + 1}. ${researcher.name}${researcher.title ? `, ${researcher.title}` : ""}${researcher.department ? ` (${researcher.department})` : ""}: ${researcher.matchingPapers} matching indexed publication(s), profile slug=${researcher.slug}`,
+                  `${index + 1}. ${researcher.name}${researcher.title ? `, ${researcher.title}` : ""}${researcher.department ? ` (${researcher.department})` : ""}: OpenAlex author topic(s)=${researcher.matchingTopics.map((topic) => `${topic.name} (${topic.worksCount} works)`).join(", ")}; ${researcher.matchingPapers} matching locally indexed publication(s); profile slug=${researcher.slug}`,
               )
               .join(
                 "; ",
-              )}. This ranking is based on matching indexed publications, not a formal claim of expertise.`,
+              )}. Researchers are selected and ranked from OpenAlex author topics; local paper matches are supporting evidence only.`,
           ]
         : [
-            `No researcher with indexed publications matching "${subject}" was found.`,
+            `No researcher has a synced OpenAlex author topic matching "${subject}". Do not infer expertise from incidental paper mentions.`,
           ],
     };
   }
@@ -1550,12 +1585,7 @@ export class ChatService {
     }
     const terms = expandResearchTopicTerms(subject);
     const where: Prisma.PaperWhereInput = {
-      OR: terms.flatMap((term) => [
-        { title: { contains: term } },
-        { abstract: { contains: term } },
-        { primaryTopic: { is: { displayName: { contains: term } } } },
-        { topics: { some: { topic: { displayName: { contains: term } } } } },
-      ]),
+      OR: terms.flatMap((term) => buildTopicPhraseFilters(term)),
       ...(flow.year
         ? { publicationYear: flow.year }
         : flow.yearFrom || flow.yearTo
@@ -2171,10 +2201,25 @@ export class ChatService {
     try {
       onChunk({ status: "thinking", requestId });
       this.trace.log(requestId, "stream.status", { status: "thinking" });
+      const contextStartedAt = Date.now();
+      this.trace.log(requestId, "pipeline.context.input", {
+        query: dto.query,
+        conversationId,
+      });
       const history = await this.loadConversationHistory(conversationId);
       this.trace.log(requestId, "conversation.history_loaded", {
         conversationId,
         turnCount: history.length,
+        history,
+      });
+      this.trace.log(requestId, "pipeline.context.output", {
+        history,
+        turnCount: history.length,
+        latencyMs: Date.now() - contextStartedAt,
+      });
+      const classificationStartedAt = Date.now();
+      this.trace.log(requestId, "pipeline.classification.input", {
+        query: dto.query,
         history,
       });
       const classification = await this.intentClassifier.classify(
@@ -2183,13 +2228,28 @@ export class ChatService {
         signal,
         requestId,
       );
+      this.trace.log(requestId, "pipeline.classification.output", {
+        classification,
+        latencyMs: Date.now() - classificationStartedAt,
+      });
       stage = "tool_selection";
+      const selectionStartedAt = Date.now();
       const selection = this.toolSelector.select(classification, requestId);
       route = selection.route;
+      this.trace.log(requestId, "pipeline.tool_selection.output", {
+        selection,
+        latencyMs: Date.now() - selectionStartedAt,
+      });
       this.logger.log(
         `Chat tool selection requestId=${requestId} intent=${classification.intent} tools=${selection.toolCalls.map((call) => call.name).join(",")} route=${route}`,
       );
       stage = "tool_calling";
+      const retrievalStartedAt = Date.now();
+      this.trace.log(requestId, "pipeline.tool_calling.input", {
+        route,
+        query: dto.query,
+        toolCalls: selection.toolCalls,
+      });
       const { evidence, facts } = await this.retrieveEvidence(
         route,
         dto.query,
@@ -2204,6 +2264,12 @@ export class ChatService {
         evidence,
         facts,
         sources: retrievedSources,
+      });
+      this.trace.log(requestId, "pipeline.tool_calling.output", {
+        evidence,
+        facts,
+        sources: retrievedSources,
+        latencyMs: Date.now() - retrievalStartedAt,
       });
       onChunk({ status: "generating", requestId, route });
       this.trace.log(requestId, "stream.status", {
@@ -2232,10 +2298,26 @@ export class ChatService {
         this.logger.log(
           `Chat stream completed requestId=${requestId} route=${route} sources=0 latencyMs=${Date.now() - startTime}`,
         );
+        this.trace.log(requestId, "pipeline.completed", {
+          query: dto.query,
+          route,
+          classification,
+          toolCalls: selection.toolCalls,
+          answer,
+          sources: [],
+          latencyMs: Date.now() - startTime,
+        });
         return;
       }
 
       stage = "response_generation";
+      const generationStartedAt = Date.now();
+      this.trace.log(requestId, "pipeline.response_generation.input", {
+        query: dto.query,
+        history,
+        facts,
+        evidence,
+      });
       const answer = await this.responseGenerator.generate(
         dto.query,
         evidence,
@@ -2252,6 +2334,11 @@ export class ChatService {
         answer,
         retrievedSources,
       );
+      this.trace.log(requestId, "pipeline.response_generation.output", {
+        answer,
+        sources,
+        latencyMs: Date.now() - generationStartedAt,
+      });
       onChunk({ status: "completed", requestId, done: true, sources });
       this.trace.log(requestId, "stream.status", {
         status: "completed",
@@ -2270,6 +2357,15 @@ export class ChatService {
       this.logger.log(
         `Chat stream completed requestId=${requestId} route=${route} sources=${sources.length} latencyMs=${Date.now() - startTime}`,
       );
+      this.trace.log(requestId, "pipeline.completed", {
+        query: dto.query,
+        route,
+        classification,
+        toolCalls: selection.toolCalls,
+        answer,
+        sources,
+        latencyMs: Date.now() - startTime,
+      });
     } catch (error) {
       if (!signal?.aborted) {
         const normalizedError =
