@@ -15,7 +15,6 @@ import type { ChatCitationDto, ChatStreamStatus } from "@repo/contracts";
 import { Button } from "@repo/ui/components/ui/button";
 import { Input } from "@repo/ui/components/ui/input";
 import { researchApi } from "../../lib/research-api";
-import { AssistantMessageContent } from "./assistant-message-content";
 
 interface Message {
   id: string;
@@ -53,21 +52,59 @@ const MAX_PERSISTED_MESSAGES = 50;
 const MAX_PERSISTED_MESSAGE_LENGTH = 20_000;
 const MAX_PERSISTED_SOURCES = 10;
 
+function renderInlineMarkdown(text: string): React.JSX.Element[] {
+  return text
+    .split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
+    .filter(Boolean)
+    .map((part, index) => {
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={index}>{part.slice(2, -2)}</strong>;
+      }
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return <code key={index}>{part.slice(1, -1)}</code>;
+      }
+      return <span key={index}>{part}</span>;
+    });
+}
+
+function AssistantMarkdown({ text }: { text: string }): React.JSX.Element {
+  const lines = text.split("\n");
+  return (
+    <div className="assistant-message-content">
+      {lines.map((line, index) => {
+        const heading = line.match(/^#{1,3}\s+(.+)$/);
+        const listItem = line.match(/^[-*]\s+(.+)$/);
+        const content = heading?.[1] ?? listItem?.[1] ?? line;
+        return (
+          <span
+            className="assistant-markdown-line"
+            key={`${index}-${line.slice(0, 20)}`}
+          >
+            {heading ? (
+              <strong className="assistant-inline-heading">
+                {renderInlineMarkdown(content)}
+              </strong>
+            ) : listItem ? (
+              <span className="assistant-inline-list-item">
+                {renderInlineMarkdown(content)}
+              </span>
+            ) : (
+              renderInlineMarkdown(content)
+            )}
+            {index < lines.length - 1 && <br />}
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 function hasValidSourceCitation(message: Message): boolean {
-  if (!message.sources || message.sources.length === 0) return false;
-  const citationMatches = message.text.match(/\[(\d+(?:\s*[,;]\s*\d+)*)\]/g);
-  if (!citationMatches) return false;
-
-  const citedNumbers = new Set<number>();
-  for (const match of citationMatches) {
-    const raw = match.slice(1, -1);
-    const nums = raw.split(/[,;]/).map((n) => parseInt(n.trim(), 10));
-    for (const num of nums) {
-      if (!Number.isNaN(num)) citedNumbers.add(num);
-    }
-  }
-
-  return message.sources.some((_, index) => citedNumbers.has(index + 1));
+  return Boolean(
+    message.sources?.some((_, index) =>
+      new RegExp(`\\[${index + 1}\\]`).test(message.text),
+    ),
+  );
 }
 
 function isConversationId(value: unknown): value is string {
@@ -92,16 +129,16 @@ function restoreMessage(value: unknown): Message | null {
     candidate.phase === "generating";
   const sources = Array.isArray(candidate.sources)
     ? candidate.sources
-        .filter(
-          (source): source is ChatCitationDto =>
-            Boolean(source) &&
-            typeof source === "object" &&
-            typeof source.paperId === "string" &&
-            typeof source.title === "string" &&
-            typeof source.year === "number" &&
-            typeof source.citedByCount === "number",
-        )
-        .slice(0, MAX_PERSISTED_SOURCES)
+      .filter(
+        (source): source is ChatCitationDto =>
+          Boolean(source) &&
+          typeof source === "object" &&
+          typeof source.paperId === "string" &&
+          typeof source.title === "string" &&
+          typeof source.year === "number" &&
+          typeof source.citedByCount === "number",
+      )
+      .slice(0, MAX_PERSISTED_SOURCES)
     : undefined;
 
   return {
@@ -267,21 +304,6 @@ export function AiAssistant(): React.JSX.Element {
     );
   };
 
-  const handleCitationClick = (
-    messageId: string,
-    citationNumber: number,
-  ): void => {
-    const targetId = `source-${messageId}-${citationNumber}`;
-    const el = document.getElementById(targetId);
-    if (el) {
-      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      el.classList.add("is-highlighted");
-      window.setTimeout(() => {
-        el.classList.remove("is-highlighted");
-      }, 2000);
-    }
-  };
-
   const stopStreaming = (): void => {
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
@@ -342,19 +364,19 @@ export function AiAssistant(): React.JSX.Element {
           current.map((message) =>
             message.id === assistantId
               ? {
-                  ...message,
-                  text: message.text + (chunk.token ?? ""),
-                  sources: chunk.sources ?? message.sources,
-                  route: chunk.route ?? message.route,
-                  requestId: chunk.requestId ?? message.requestId,
-                  phase:
-                    chunk.status ??
-                    (chunk.token ? "generating" : message.phase),
-                  isStreaming:
-                    !chunk.done &&
-                    chunk.status !== "completed" &&
-                    chunk.status !== "error",
-                }
+                ...message,
+                text: message.text + (chunk.token ?? ""),
+                sources: chunk.sources ?? message.sources,
+                route: chunk.route ?? message.route,
+                requestId: chunk.requestId ?? message.requestId,
+                phase:
+                  chunk.status ??
+                  (chunk.token ? "generating" : message.phase),
+                isStreaming:
+                  !chunk.done &&
+                  chunk.status !== "completed" &&
+                  chunk.status !== "error",
+              }
               : message,
           ),
         );
@@ -365,7 +387,7 @@ export function AiAssistant(): React.JSX.Element {
           error instanceof TypeError
             ? "The web app could not connect to the research API. Check that the API is running and reachable."
             : error instanceof Error &&
-                error.message.startsWith("Research API returned")
+              error.message.startsWith("Research API returned")
               ? "The research API rejected the request. Check the API logs for the matching HTTP error."
               : "The research assistant could not complete this request. Please try again.";
         const displayError = serverError?.message ?? fallbackMessage;
@@ -377,13 +399,13 @@ export function AiAssistant(): React.JSX.Element {
           current.map((message) =>
             message.id === assistantId
               ? {
-                  ...message,
-                  text: receivedText ? message.text : displayError,
-                  errorMessage: receivedText ? displayError : undefined,
-                  requestId: serverError?.requestId ?? message.requestId,
-                  isStreaming: false,
-                  phase: "error",
-                }
+                ...message,
+                text: receivedText ? message.text : displayError,
+                errorMessage: receivedText ? displayError : undefined,
+                requestId: serverError?.requestId ?? message.requestId,
+                isStreaming: false,
+                phase: "error",
+              }
               : message,
           ),
         );
@@ -519,26 +541,16 @@ export function AiAssistant(): React.JSX.Element {
                           </span>
                         </span>
                       ) : message.sender === "assistant" ? (
-                        <AssistantMessageContent
-                          messageId={message.id}
-                          text={visibleText}
-                          sources={message.sources}
-                          isStreaming={message.phase === "generating"}
-                          onCitationClick={(citationNumber) =>
-                            handleCitationClick(message.id, citationNumber)
-                          }
-                        />
+                        <AssistantMarkdown text={visibleText} />
                       ) : (
                         visibleText
                       )}
-                      {message.phase === "generating" &&
-                        message.text &&
-                        message.sender === "user" && (
-                          <span
-                            className="assistant-stream-cursor"
-                            aria-hidden="true"
-                          />
-                        )}
+                      {message.phase === "generating" && message.text && (
+                        <span
+                          className="assistant-stream-cursor"
+                          aria-hidden="true"
+                        />
+                      )}
                     </div>
                     {message.phase === "error" && message.errorMessage && (
                       <p className="assistant-message-error">
@@ -550,56 +562,40 @@ export function AiAssistant(): React.JSX.Element {
                         Reference: {message.requestId}
                       </span>
                     )}
-                    {hasValidSourceCitation(message) &&
-                      !message.isStreaming && (
-                        <div className="assistant-sources">
-                          <h3>
-                            <BookOpen aria-hidden="true" /> Sources
-                          </h3>
-                          <ol>
-                            {message.sources?.map((source, index) => {
-                              const citationNum = index + 1;
-                              const sourceId = `source-${message.id}-${citationNum}`;
-                              return (
-                                <li
-                                  key={source.paperId}
-                                  id={sourceId}
-                                  className="assistant-source-item"
+                    {hasValidSourceCitation(message) && !message.isStreaming && (
+                      <div className="assistant-sources">
+                        <h3>
+                          <BookOpen aria-hidden="true" /> Sources
+                        </h3>
+                        <ol>
+                          {message.sources?.map((source) => (
+                            <li key={source.paperId}>
+                              <div>
+                                <strong>{source.title}</strong>
+                                <span>
+                                  {source.year} · {source.citedByCount}{" "}
+                                  citations
+                                </span>
+                              </div>
+                              {source.doi && (
+                                <a
+                                  href={
+                                    source.doi.startsWith("http")
+                                      ? source.doi
+                                      : `https://doi.org/${source.doi}`
+                                  }
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  aria-label={`Open source: ${source.title}`}
                                 >
-                                  <span
-                                    className="assistant-source-num"
-                                    aria-label={`Source [${citationNum}]`}
-                                  >
-                                    [{citationNum}]
-                                  </span>
-                                  <div className="assistant-source-details">
-                                    <strong>{source.title}</strong>
-                                    <span>
-                                      {source.year} ·{" "}
-                                      {source.citedByCount.toLocaleString()}{" "}
-                                      citations
-                                    </span>
-                                  </div>
-                                  {source.doi && (
-                                    <a
-                                      href={
-                                        source.doi.startsWith("http")
-                                          ? source.doi
-                                          : `https://doi.org/${source.doi}`
-                                      }
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      aria-label={`Open source: ${source.title}`}
-                                    >
-                                      <ExternalLink aria-hidden="true" />
-                                    </a>
-                                  )}
-                                </li>
-                              );
-                            })}
-                          </ol>
-                        </div>
-                      )}
+                                  <ExternalLink aria-hidden="true" />
+                                </a>
+                              )}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
                   </div>
                 </article>
               );
