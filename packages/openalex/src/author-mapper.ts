@@ -5,9 +5,16 @@ export interface OpenAlexAuthorEntityRaw {
   cited_by_count?: number;
   ids?: { orcid?: string | null };
   display_name_alternatives?: string[];
-  affiliations?: Array<{ institution?: { id?: string } }>;
+  affiliations?: Array<{
+    institution?: { id?: string };
+    years?: number[];
+  }>;
   last_known_institutions?: Array<{ display_name?: string; type?: string }>;
-  topics?: Array<{ display_name?: string; count?: number }>;
+  topics?: Array<{
+    id?: string;
+    display_name?: string;
+    count?: number;
+  }>;
 }
 
 export interface NormalizedResearcher {

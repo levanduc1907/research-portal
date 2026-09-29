@@ -25,6 +25,19 @@ export interface OpenAlexAuthorsResponse {
   results: OpenAlexAuthorEntityRaw[];
 }
 
+export interface OpenAlexTopicGroup {
+  key: string;
+  key_display_name: string;
+  count: number;
+}
+
+interface OpenAlexTopicGroupsResponse {
+  meta: OpenAlexWorksResponse["meta"] & {
+    groups_count?: number | null;
+  };
+  group_by: OpenAlexTopicGroup[];
+}
+
 export class OpenAlexClient {
   private readonly baseUrl: string;
   private readonly email?: string;
@@ -214,6 +227,34 @@ export class OpenAlexClient {
     );
   }
 
+  async getAuthorsByIds(
+    authorIds: string[],
+  ): Promise<OpenAlexAuthorEntityRaw[]> {
+    const cleanIds = [
+      ...new Set(
+        authorIds
+          .map((id) => id.replace("https://openalex.org/", "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    const authors: OpenAlexAuthorEntityRaw[] = [];
+
+    for (let index = 0; index < cleanIds.length; index += 100) {
+      const batch = cleanIds.slice(index, index + 100);
+      const url = new URL(`${this.baseUrl}/authors`);
+      url.searchParams.set("filter", `openalex_id:${batch.join("|")}`);
+      url.searchParams.set("per_page", "100");
+      url.searchParams.set("mailto", this.email || "");
+      const response = await this.request<OpenAlexAuthorsResponse>(
+        url.toString(),
+        "OpenAlex authors batch query",
+      );
+      authors.push(...response.results);
+    }
+
+    return authors;
+  }
+
   async getAuthor(authorId: string): Promise<OpenAlexAuthorEntityRaw> {
     const cleanId = authorId.replace("https://openalex.org/", "");
     const url = new URL(
@@ -223,6 +264,41 @@ export class OpenAlexClient {
     return this.request<OpenAlexAuthorEntityRaw>(
       url.toString(),
       "OpenAlex author fetch",
+    );
+  }
+
+  async getAuthorTopics(authorId: string): Promise<OpenAlexTopicGroup[]> {
+    const cleanId = authorId.replace("https://openalex.org/", "");
+    const topics = new Map<string, OpenAlexTopicGroup>();
+    let cursor: string | null = "*";
+
+    while (cursor) {
+      const url = new URL(`${this.baseUrl}/works`);
+      url.searchParams.set("filter", `authorships.author.id:${cleanId}`);
+      url.searchParams.set("group_by", "topics.id");
+      url.searchParams.set("per_page", "100");
+      url.searchParams.set("cursor", cursor);
+      url.searchParams.set("mailto", this.email || "");
+
+      const response = await this.request<OpenAlexTopicGroupsResponse>(
+        url.toString(),
+        "OpenAlex author topics query",
+      );
+      for (const topic of response.group_by || []) {
+        if (!topic.key || !topic.key_display_name) continue;
+        topics.set(topic.key, topic);
+      }
+
+      const nextCursor = response.meta.next_cursor || null;
+      if (nextCursor === cursor) {
+        throw new Error("OpenAlex returned a repeated author topics cursor");
+      }
+      cursor = nextCursor;
+    }
+
+    return [...topics.values()].sort(
+      (left, right) =>
+        right.count - left.count || left.key.localeCompare(right.key),
     );
   }
 }
