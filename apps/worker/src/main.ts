@@ -20,6 +20,10 @@ async function bootstrap() {
     command === "link-researcher-authors" ||
     command === "sync-researcher-affiliations" ||
     command === "sync-researcher-metrics" ||
+    command === "sync-researcher-topics" ||
+    command === "audit-researcher-identities" ||
+    command === "apply-researcher-identity-review" ||
+    command === "backfill-reviewed-researcher-papers" ||
     command === "backfill-researcher-papers" ||
     command === "backfill-researcher-departments" ||
     command === "sync-vectors"
@@ -71,6 +75,70 @@ async function bootstrap() {
       const result = await importer.syncResearcherMetrics();
       logger.log(
         `Researcher metrics finished: ${result.totalImported}/${result.totalFetched} checked, ${result.changed} corrected, ${result.failed} failed`,
+      );
+      failed ||= result.status === "FAILED";
+    }
+    if (command === "sync-researcher-topics") {
+      const researcherId = process.argv
+        .find((arg) => arg.startsWith("--researcher-id="))
+        ?.split("=")[1];
+      const result = await importer.syncResearcherTopics(
+        researcherId,
+        process.argv.includes("--only-missing"),
+      );
+      logger.log(
+        `Researcher topic sync finished: ${result.totalImported}/${result.totalFetched} synced, ${result.failed} failed`,
+      );
+      failed ||= result.status === "FAILED";
+    }
+    if (command === "audit-researcher-identities") {
+      const outputDirectory = process.argv
+        .find((arg) => arg.startsWith("--output="))
+        ?.split("=")[1];
+      const result = await importer.auditResearcherIdentities(outputDirectory);
+      logger.log(
+        `Researcher identity audit finished: ${result.linked}/${result.total} linked, ${result.unlinked} unlinked, ${result.review} name review, ${result.highRisk} high risk, ${result.missingUiucAffiliation} missing UIUC affiliation`,
+      );
+      logger.log(`Full report: ${result.fullReportPath}`);
+      logger.log(`Review report: ${result.reviewReportPath}`);
+    }
+    if (command === "apply-researcher-identity-review") {
+      const filePath = process.argv
+        .slice(3)
+        .find((arg) => arg !== "--" && !arg.startsWith("-"));
+      if (!filePath) {
+        throw new Error(
+          "Usage: pnpm --filter worker apply:researcher-identity-review -- /path/to/review.csv",
+        );
+      }
+      const result = await importer.applyResearcherIdentityReview(
+        resolve(process.env.INIT_CWD || process.cwd(), filePath),
+      );
+      logger.log(
+        `Curated identity import finished: ${result.applied}/${result.requested} applied (${result.changed} changed, ${result.unchanged} unchanged), ${result.skipped} null skipped, ${result.failed} failed`,
+      );
+      failed ||= result.failed > 0;
+    }
+    if (command === "backfill-reviewed-researcher-papers") {
+      const filePath = process.argv
+        .slice(3)
+        .find((arg) => arg !== "--" && !arg.startsWith("-"));
+      if (!filePath) {
+        throw new Error(
+          "Usage: pnpm --filter worker backfill:reviewed-researcher-papers -- /path/to/review.csv",
+        );
+      }
+      const researcherIds = await importer.reviewedResearcherIds(
+        resolve(process.env.INIT_CWD || process.cwd(), filePath),
+      );
+      const result = await importer.runResearcherPaperBackfill({
+        researcherIds,
+        perPage: 100,
+        resume: !process.argv.includes("--restart"),
+        trustLinkedIdentity: true,
+      });
+      logger.log(
+        `Reviewed researcher paper backfill finished: ${result.researchersProcessed}/${researcherIds.length} researchers, ${result.totalImported} works persisted, ${result.unresolved} unresolved`,
       );
       failed ||= result.status === "FAILED";
     }

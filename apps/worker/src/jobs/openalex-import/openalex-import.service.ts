@@ -11,8 +11,10 @@ import {
   inferResearcherDepartment,
 } from "@repo/openalex";
 import { createReadStream } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { createInterface } from "node:readline";
+import { resolve } from "node:path";
 import { PrismaService } from "../../database/prisma.service";
 import {
   Prisma,
@@ -30,6 +32,27 @@ type ResearcherWorkCheckpoint = {
   lastCompletedResearcherId: string | null;
   activeResearcherId: string | null;
   worksCursor: string;
+};
+
+type ResearcherIdentityAuditRow = {
+  researcherId: string;
+  slug: string;
+  portalName: string;
+  email: string;
+  profileUrl: string;
+  openalexId: string;
+  openalexName: string;
+  nameScore: number | null;
+  nameStatus: "UNLINKED" | "HIGH_RISK" | "REVIEW" | "STRONG" | "EXACT";
+  hasUiucAffiliation: boolean | null;
+  uiucYears: string;
+  issues: string;
+};
+
+type CuratedResearcherIdentity = {
+  researcherId: string;
+  portalName: string;
+  openalexId: string;
 };
 
 type ResearcherIdentity = {
@@ -89,6 +112,387 @@ export class OpenAlexImportService {
     return Number.isFinite(parsed) && parsed > 0
       ? Math.floor(parsed)
       : fallback;
+  }
+
+  private csvCell(value: string | number | boolean | null): string {
+    const text = value === null ? "" : String(value);
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }
+
+  private identityAuditCsv(rows: ResearcherIdentityAuditRow[]): string {
+    const keys: Array<keyof ResearcherIdentityAuditRow> = [
+      "researcherId",
+      "slug",
+      "portalName",
+      "email",
+      "profileUrl",
+      "openalexId",
+      "openalexName",
+      "nameScore",
+      "nameStatus",
+      "hasUiucAffiliation",
+      "uiucYears",
+      "issues",
+    ];
+    return [
+      keys.join(","),
+      ...rows.map((row) =>
+        keys.map((key) => this.csvCell(row[key])).join(","),
+      ),
+    ].join("\n");
+  }
+
+  private canonicalOpenAlexAuthorId(value: string): string | null {
+    const match = value.trim().match(/(?:^|\/)(A\d+)\/?$/i);
+    return match ? `https://openalex.org/${match[1].toUpperCase()}` : null;
+  }
+
+  private async readCuratedResearcherIdentities(
+    filePath: string,
+  ): Promise<{ rows: CuratedResearcherIdentity[]; skipped: number }> {
+    const input = createInterface({
+      input: createReadStream(filePath),
+      crlfDelay: Infinity,
+    });
+    let headers: string[] | null = null;
+    const rows: CuratedResearcherIdentity[] = [];
+    let skipped = 0;
+
+    for await (const line of input) {
+      if (!headers) {
+        headers = this.parseDelimitedLine(line, ",").map((value) =>
+          value.replace(/^\uFEFF/, "").trim(),
+        );
+        continue;
+      }
+      if (!line.trim()) continue;
+      const values = this.parseDelimitedLine(line, ",");
+      const record = new Map(
+        headers.map((header, index) => [header, values[index]?.trim() || ""]),
+      );
+      const rawRealId = record.get("real_id") || "";
+      if (!rawRealId || rawRealId.toUpperCase() === "NULL") {
+        skipped++;
+        continue;
+      }
+      const openalexId = this.canonicalOpenAlexAuthorId(rawRealId);
+      const researcherId = record.get("researcherId") || "";
+      if (!openalexId || !researcherId) {
+        throw new Error(
+          `Invalid curated identity row for ${record.get("portalName") || researcherId || "unknown researcher"}: real_id=${rawRealId}`,
+        );
+      }
+      rows.push({
+        researcherId,
+        portalName: record.get("portalName") || "",
+        openalexId,
+      });
+    }
+
+    if (!headers?.includes("researcherId") || !headers.includes("real_id")) {
+      throw new Error(
+        "Identity review CSV must contain researcherId and real_id columns",
+      );
+    }
+    return { rows, skipped };
+  }
+
+  async applyResearcherIdentityReview(filePath: string): Promise<{
+    researcherIds: string[];
+    requested: number;
+    applied: number;
+    changed: number;
+    unchanged: number;
+    skipped: number;
+    failed: number;
+    failures: string[];
+  }> {
+    const { rows, skipped } =
+      await this.readCuratedResearcherIdentities(filePath);
+    const duplicateOpenAlexIds = new Set<string>();
+    const owners = new Map<string, string>();
+    for (const row of rows) {
+      const owner = owners.get(row.openalexId);
+      if (owner && owner !== row.researcherId) {
+        duplicateOpenAlexIds.add(row.openalexId);
+      } else {
+        owners.set(row.openalexId, row.researcherId);
+      }
+    }
+
+    const remoteAuthors = await this.client.getAuthorsByIds(
+      rows
+        .filter((row) => !duplicateOpenAlexIds.has(row.openalexId))
+        .map((row) => row.openalexId),
+    );
+    const remoteById = new Map(
+      remoteAuthors.map((author) => [author.id.toUpperCase(), author]),
+    );
+    const missingIds = [
+      ...new Set(
+        rows
+          .map((row) => row.openalexId)
+          .filter((id) => !remoteById.has(id.toUpperCase())),
+      ),
+    ];
+    for (let index = 0; index < missingIds.length; index += 5) {
+      const batch = missingIds.slice(index, index + 5);
+      const results = await Promise.allSettled(
+        batch.map((id) => this.client.getAuthor(id)),
+      );
+      results.forEach((result) => {
+        if (result.status === "fulfilled") {
+          remoteById.set(result.value.id.toUpperCase(), result.value);
+        }
+      });
+    }
+
+    let applied = 0;
+    let changed = 0;
+    let unchanged = 0;
+    const failures: string[] = [];
+    const researcherIds: string[] = [];
+    for (const row of rows) {
+      try {
+        if (duplicateOpenAlexIds.has(row.openalexId)) {
+          throw new Error("duplicate real_id in review CSV");
+        }
+        const remote = remoteById.get(row.openalexId.toUpperCase());
+        if (!remote) throw new Error("OpenAlex Author does not exist");
+        const researcher = await this.prisma.researcher.findUnique({
+          where: { id: row.researcherId },
+          select: { id: true, authorId: true, openalexId: true, name: true },
+        });
+        if (!researcher) throw new Error("researcher does not exist");
+
+        const normalized = mapOpenAlexAuthorIdentity(remote);
+        const author = await this.prisma.author.upsert({
+          where: { openalexId: normalized.openalexId },
+          update: {
+            displayName: normalized.displayName,
+            orcid: normalized.orcid,
+          },
+          create: normalized,
+          select: { id: true },
+        });
+        const conflictingResearcher = await this.prisma.researcher.findFirst({
+          where: {
+            id: { not: researcher.id },
+            OR: [
+              { authorId: author.id },
+              { openalexId: normalized.openalexId },
+            ],
+          },
+          select: { id: true, name: true },
+        });
+        if (conflictingResearcher) {
+          throw new Error(
+            `real_id is already linked to ${conflictingResearcher.name} (${conflictingResearcher.id})`,
+          );
+        }
+
+        const identityChanged =
+          researcher.authorId !== author.id ||
+          researcher.openalexId !== normalized.openalexId;
+        await this.prisma.$transaction(async (transaction) => {
+          if (identityChanged) {
+            await transaction.researcherTopic.deleteMany({
+              where: { researcherId: researcher.id },
+            });
+          }
+          await transaction.researcher.update({
+            where: { id: researcher.id },
+            data: {
+              authorId: author.id,
+              openalexId: normalized.openalexId,
+              worksCount: Math.max(0, remote.works_count || 0),
+              citedByCount: Math.max(0, remote.cited_by_count || 0),
+            },
+          });
+        });
+        this.authorCache.set(normalized.openalexId, author.id);
+        researcherIds.push(researcher.id);
+        applied++;
+        if (identityChanged) changed++;
+        else unchanged++;
+        this.logger.log(
+          `Curated identity ${identityChanged ? "updated" : "confirmed"}: ${researcher.name} -> ${normalized.displayName} (${normalized.openalexId})`,
+        );
+      } catch (error) {
+        failures.push(
+          `${row.portalName || row.researcherId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    if (failures.length) {
+      this.logger.error(
+        `Curated identity import had ${failures.length} failure(s): ${failures.slice(0, 20).join(" | ")}`,
+      );
+    }
+    return {
+      researcherIds,
+      requested: rows.length,
+      applied,
+      changed,
+      unchanged,
+      skipped,
+      failed: failures.length,
+      failures,
+    };
+  }
+
+  async reviewedResearcherIds(filePath: string): Promise<string[]> {
+    const { rows } = await this.readCuratedResearcherIdentities(filePath);
+    return rows.map((row) => row.researcherId);
+  }
+
+  async auditResearcherIdentities(outputDirectory?: string): Promise<{
+    total: number;
+    linked: number;
+    unlinked: number;
+    review: number;
+    highRisk: number;
+    missingUiucAffiliation: number;
+    fullReportPath: string;
+    reviewReportPath: string;
+  }> {
+    const uiucId = "https://openalex.org/I157725225";
+    const researchers = await this.prisma.researcher.findMany({
+      orderBy: { name: "asc" },
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        email: true,
+        profileUrl: true,
+        openalexId: true,
+        author: { select: { openalexId: true } },
+      },
+    });
+    const requestedIds = researchers.flatMap((researcher) => {
+      const id = researcher.author?.openalexId || researcher.openalexId;
+      return id ? [id] : [];
+    });
+    const remoteAuthors = await this.client.getAuthorsByIds(requestedIds);
+    const remoteById = new Map(
+      remoteAuthors.map((author) => [author.id.toUpperCase(), author]),
+    );
+    // Author list queries omit some hidden/merged profiles. Confirm every
+    // missing linked ID against the detail endpoint before reporting it as
+    // unavailable, so the review CSV does not contain batch-query artifacts.
+    const missingIds = [
+      ...new Set(
+        requestedIds.filter((id) => !remoteById.has(id.toUpperCase())),
+      ),
+    ];
+    for (let index = 0; index < missingIds.length; index += 5) {
+      const batch = missingIds.slice(index, index + 5);
+      const results = await Promise.allSettled(
+        batch.map((id) => this.client.getAuthor(id)),
+      );
+      results.forEach((result) => {
+        if (result.status === "fulfilled") {
+          remoteById.set(result.value.id.toUpperCase(), result.value);
+        }
+      });
+    }
+
+    const rows: ResearcherIdentityAuditRow[] = researchers.map((researcher) => {
+      const linkedId = researcher.author?.openalexId || researcher.openalexId;
+      const remote = linkedId
+        ? remoteById.get(linkedId.toUpperCase())
+        : undefined;
+      if (!linkedId || !remote) {
+        return {
+          researcherId: researcher.id,
+          slug: researcher.slug,
+          portalName: researcher.name,
+          email: researcher.email || "",
+          profileUrl: researcher.profileUrl || "",
+          openalexId: linkedId || "",
+          openalexName: "",
+          nameScore: null,
+          nameStatus: "UNLINKED",
+          hasUiucAffiliation: null,
+          uiucYears: "",
+          issues: linkedId ? "OPENALEX_RECORD_NOT_FOUND" : "NO_AUTHOR_LINK",
+        };
+      }
+
+      const score = this.authorNameScore(researcher.name, remote);
+      const nameStatus =
+        score >= 98
+          ? "EXACT"
+          : score >= 88
+            ? "STRONG"
+            : score >= 75
+              ? "REVIEW"
+              : "HIGH_RISK";
+      const uiucAffiliations = (remote.affiliations || []).filter(
+        ({ institution }) => institution?.id === uiucId,
+      );
+      const years = [
+        ...new Set(uiucAffiliations.flatMap(({ years }) => years || [])),
+      ].sort((left, right) => right - left);
+      const issues = [
+        nameStatus === "REVIEW" || nameStatus === "HIGH_RISK"
+          ? `NAME_${nameStatus}`
+          : "",
+        uiucAffiliations.length ? "" : "NO_UIUC_AFFILIATION",
+      ].filter(Boolean);
+
+      return {
+        researcherId: researcher.id,
+        slug: researcher.slug,
+        portalName: researcher.name,
+        email: researcher.email || "",
+        profileUrl: researcher.profileUrl || "",
+        openalexId: remote.id,
+        openalexName: remote.display_name?.trim() || "",
+        nameScore: score,
+        nameStatus,
+        hasUiucAffiliation: uiucAffiliations.length > 0,
+        uiucYears: years.join("|"),
+        issues: issues.join("|"),
+      };
+    });
+
+    const reviewRows = rows.filter((row) => row.issues.length > 0);
+    const targetDirectory = resolve(
+      outputDirectory || process.env.INIT_CWD || process.cwd(),
+      outputDirectory ? "" : "reports",
+    );
+    await mkdir(targetDirectory, { recursive: true });
+    const fullReportPath = resolve(
+      targetDirectory,
+      "researcher-openalex-identity-audit.csv",
+    );
+    const reviewReportPath = resolve(
+      targetDirectory,
+      "researcher-openalex-identity-review.csv",
+    );
+    await Promise.all([
+      writeFile(fullReportPath, `${this.identityAuditCsv(rows)}\n`, "utf8"),
+      writeFile(
+        reviewReportPath,
+        `${this.identityAuditCsv(reviewRows)}\n`,
+        "utf8",
+      ),
+    ]);
+
+    return {
+      total: rows.length,
+      linked: rows.filter((row) => row.nameStatus !== "UNLINKED").length,
+      unlinked: rows.filter((row) => row.nameStatus === "UNLINKED").length,
+      review: rows.filter((row) => row.nameStatus === "REVIEW").length,
+      highRisk: rows.filter((row) => row.nameStatus === "HIGH_RISK").length,
+      missingUiucAffiliation: rows.filter(
+        (row) => row.hasUiucAffiliation === false,
+      ).length,
+      fullReportPath,
+      reviewReportPath,
+    };
   }
 
   async syncInstitutionProfile(
@@ -1733,6 +2137,153 @@ export class OpenAlexImportService {
     };
   }
 
+  async syncResearcherTopics(
+    researcherId?: string,
+    onlyMissing = false,
+  ): Promise<ImportResult & { failed: number }> {
+    const researchers = await this.prisma.researcher.findMany({
+      where: researcherId
+        ? { id: researcherId, authorId: { not: null } }
+        : {
+            authorId: { not: null },
+            ...(onlyMissing ? { topics: { none: {} } } : {}),
+          },
+      orderBy: { id: "asc" },
+      select: {
+        id: true,
+        name: true,
+        openalexId: true,
+        author: { select: { openalexId: true } },
+      },
+    });
+    let totalImported = 0;
+    let failed = 0;
+    const failures: string[] = [];
+    const concurrency = 5;
+    // OpenAlex fetches can run concurrently, but topic rows are shared by many
+    // researchers. Serialize database writes to prevent cross-author deadlocks.
+    let writeQueue: Promise<void> = Promise.resolve();
+
+    for (let index = 0; index < researchers.length; index += concurrency) {
+      const batch = researchers.slice(index, index + concurrency);
+      const results = await Promise.allSettled(
+        batch.map(async (researcher) => {
+          const openalexId =
+            researcher.author?.openalexId || researcher.openalexId;
+          if (!openalexId) {
+            throw new Error("Linked author has no OpenAlex ID");
+          }
+
+          // The Author object exposes only its five headline topics. Aggregate
+          // across all works instead so the relation represents every OpenAlex
+          // topic attached to this author's publication history.
+          const authorTopics = await this.client.getAuthorTopics(openalexId);
+          const uniqueTopics = new Map<
+            string,
+            { displayName: string; worksCount: number; rank: number }
+          >();
+          for (const [index, topic] of authorTopics.entries()) {
+            const topicId = topic.key?.trim();
+            const displayName = topic.key_display_name?.trim();
+            if (!topicId || !displayName || uniqueTopics.has(topicId)) continue;
+            uniqueTopics.set(topicId, {
+              displayName,
+              worksCount: Math.max(0, topic.count || 0),
+              rank: index + 1,
+            });
+          }
+
+          const writeOperation = writeQueue.then(async () => {
+            const topicRows = await Promise.all(
+              [...uniqueTopics.entries()]
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(async ([openalexTopicId, topic]) => ({
+                  topic,
+                  record: await this.prisma.topic.upsert({
+                    where: { openalexId: openalexTopicId },
+                    update: { displayName: topic.displayName },
+                    create: {
+                      openalexId: openalexTopicId,
+                      displayName: topic.displayName,
+                    },
+                  }),
+                })),
+            );
+
+            for (const { topic, record } of topicRows) {
+              await this.prisma.researcherTopic.upsert({
+                where: {
+                  researcherId_topicId: {
+                    researcherId: researcher.id,
+                    topicId: record.id,
+                  },
+                },
+                update: {
+                  worksCount: topic.worksCount,
+                  rank: topic.rank,
+                },
+                create: {
+                  researcherId: researcher.id,
+                  topicId: record.id,
+                  worksCount: topic.worksCount,
+                  rank: topic.rank,
+                },
+              });
+            }
+
+            const validTopicIds = topicRows.map(({ record }) => record.id);
+            await this.prisma.researcherTopic.deleteMany({
+              where: {
+                researcherId: researcher.id,
+                ...(validTopicIds.length
+                  ? { topicId: { notIn: validTopicIds } }
+                  : {}),
+              },
+            });
+            return topicRows.length;
+          });
+          writeQueue = writeOperation.then(
+            () => undefined,
+            () => undefined,
+          );
+          return writeOperation;
+        }),
+      );
+
+      results.forEach((result, resultIndex) => {
+        if (result.status === "fulfilled") {
+          totalImported++;
+          this.logger.debug(
+            `Researcher topics: ${batch[resultIndex].name} linked to ${result.value} OpenAlex topic(s)`,
+          );
+        } else {
+          failed++;
+          failures.push(
+            `${batch[resultIndex].name}: ${result.reason instanceof Error ? result.reason.message : String(result.reason)}`,
+          );
+        }
+      });
+
+      if ((index + batch.length) % 100 === 0) {
+        this.logger.log(
+          `Researcher topics: ${index + batch.length}/${researchers.length} checked, ${totalImported} synced, ${failed} failed`,
+        );
+      }
+    }
+
+    if (failures.length) {
+      this.logger.error(
+        `Researcher topic sync completed with ${failed} failure(s): ${failures.slice(0, 10).join(" | ")}`,
+      );
+    }
+    return {
+      totalFetched: researchers.length,
+      totalImported,
+      failed,
+      status: failed ? "FAILED" : "COMPLETED",
+    };
+  }
+
   private parseResearcherWorkCheckpoint(
     value: string | null,
   ): ResearcherWorkCheckpoint {
@@ -1866,15 +2417,22 @@ export class OpenAlexImportService {
   async runResearcherPaperBackfill(
     params: {
       researcherId?: string;
+      researcherIds?: string[];
       perPage?: number;
       maxResearchers?: number;
       resume?: boolean;
+      trustLinkedIdentity?: boolean;
     } = {},
   ): Promise<
     ImportResult & { researchersProcessed: number; unresolved: number }
   > {
-    const source = params.researcherId
-      ? `openalex_researcher_works:${params.researcherId}`
+    const selectedResearcherIds = params.researcherIds?.length
+      ? [...new Set(params.researcherIds)].sort()
+      : params.researcherId
+        ? [params.researcherId]
+        : [];
+    const source = selectedResearcherIds.length
+      ? `openalex_researcher_works:${createHash("sha256").update(selectedResearcherIds.join(",")).digest("hex").slice(0, 16)}`
       : "openalex_researcher_works";
     const run = await this.createRun(source, params.resume !== false);
     const checkpoint = this.parseResearcherWorkCheckpoint(run.cursor);
@@ -1903,8 +2461,8 @@ export class OpenAlexImportService {
       // deliberately skip unresolved researchers instead of spending author
       // search quota or risking a guessed identity; they can be linked by the
       // dedicated researcher-author job first.
-      where: params.researcherId
-        ? { id: params.researcherId }
+      where: selectedResearcherIds.length
+        ? { id: { in: selectedResearcherIds } }
         : { authorId: { not: null } },
       orderBy: { id: "asc" },
       select: {
@@ -1919,8 +2477,8 @@ export class OpenAlexImportService {
         author: { select: { openalexId: true } },
       },
     });
-    if (params.researcherId && !researchers.length) {
-      const message = `Researcher ${params.researcherId} was not found`;
+    if (selectedResearcherIds.length && !researchers.length) {
+      const message = `None of the selected researchers were found`;
       await this.prisma.importRun.update({
         where: { id: run.id },
         data: {
@@ -1983,13 +2541,13 @@ export class OpenAlexImportService {
           const primaryNameScore = openAlexAuthor.display_name
             ? this.personNameScore(researcher.name, openAlexAuthor.display_name)
             : 0;
-          if (primaryNameScore < 75) {
+          if (primaryNameScore < 75 && !params.trustLinkedIdentity) {
             this.logger.warn(
               `Existing author link for ${researcher.name} is not safe enough for paper sync (${openAlexAuthor.display_name || openAlexAuthor.id}); skipped without changing author_id`,
             );
             openAlexAuthor = null;
           }
-        } else if (params.researcherId) {
+        } else if (selectedResearcherIds.length === 1) {
           // An explicitly targeted run may resolve a missing identity. Global
           // paper backfills never change researcher-author ownership.
           openAlexAuthor =
