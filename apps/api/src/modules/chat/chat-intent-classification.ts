@@ -195,7 +195,7 @@ export function parseIntentClassification(
     ] as const)
       ? input.sort
       : null,
-    limit: boundedInteger(input.limit, 1, 10) ?? 5,
+    limit: boundedInteger(input.limit, 1, 50) ?? 5,
   };
 }
 

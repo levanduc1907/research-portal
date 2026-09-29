@@ -180,7 +180,7 @@ export class ChatResponseGeneratorService {
       "Cite claims drawn from numbered paper evidence inline as [1], [2], etc. Database facts may be stated without a bracket citation; never invent a citation. If the available data is insufficient, say so clearly.",
       "Use conversation history only to resolve follow-up references. Current evidence and database facts take precedence.",
       "The portal does not currently store grants, funded projects, funders, or publication venues. Do not infer unavailable fields.",
-      "Keep the response concise and use the same language as the user's question.",
+      "Keep the response direct and thorough. When the user asks for a specific number of items (e.g. list 30, top 10), present all items provided in Database facts up to that requested count without artificially truncating. Use the same language as the user's question.",
       `Conversation history:\n${conversation}`,
       `Question:\n${query}`,
       `Database facts:\n${structuredFacts}`,

@@ -76,6 +76,7 @@ export class ChatIntentClassifierService {
           const guardedClassification = this.applyClassificationGuards(
             query,
             classification,
+            history,
           );
           this.trace.log(requestId, "intent_classification.completed", {
             source: "ai",
@@ -100,7 +101,11 @@ export class ChatIntentClassifierService {
       });
     }
 
-    const classification = this.fallbackClassification(query);
+    const classification = this.applyClassificationGuards(
+      query,
+      this.fallbackClassification(query),
+      history,
+    );
     this.trace.log(requestId, "intent_classification.fallback", {
       reason: "provider_or_validation_failure",
       classification,
@@ -152,7 +157,9 @@ export class ChatIntentClassifierService {
       "Use VECTOR for semantic paper discovery without structured filters. Use HYBRID when semantic discovery is constrained by author, topic, or year.",
       "Resolve pronouns from conversation history. Set usePreviousAuthor=true when the current question refers to a previously discussed researcher.",
       "For questions about what a paper is about, use PAPER_SUMMARY. Preserve a referenced source number in sourceNumber.",
-      "Set topic=null unless the user explicitly names a research subject. Vietnamese count words such as 'mấy' or 'bao nhiêu' are never topics.",
+      "Set topic=null unless the user explicitly names a research subject or continues a conversation about one. Vietnamese count words such as 'mấy' or 'bao nhiêu' are never topics.",
+      "Extract requested quantity or count (e.g. 'top 10', 'list 30', 'give me 20', '30 researchers', '15 bài báo') into limit (integer between 1 and 50). Default limit to 5 (or 1 for latest).",
+      "When the question is a follow-up asking for more/different results or a specific count on a previously discussed subject without repeating it, retain the topic and intent from conversation history.",
       "Extract the author's wording into authorName; the backend will resolve it against canonical database names.",
       "JSON schema:",
       JSON.stringify({
@@ -504,15 +511,78 @@ export class ChatIntentClassifierService {
                 ))
             ? "CITATIONS_DESC"
             : null,
-      limit: isLatest ? 1 : 5,
+      limit: isLatest ? 1 : this.extractRequestedLimit(query) ?? 5,
     };
+  }
+
+  private extractRequestedLimit(query: string): number | null {
+    const normalized = query.toLowerCase();
+    const patterns = [
+      /\b(?:top|list(?:\s+of)?|show|give(?:\s+me)?|cho(?:\s+toi)?|danh\s+sach)\s+(\d{1,2})\b/i,
+      /\b(\d{1,2})\s+(?:researchers?|research|professors?|faculty|authors?|people|scientists?|papers?|publications?|articles?|bai(?:\s+bao)?|nguoi|chuyen\s+gia|tac\s+gia)\b/i,
+      /\b(?:limit|take|count)\s*(?:=|:|\s)\s*(\d{1,2})\b/i,
+    ];
+    for (const pattern of patterns) {
+      const match = normalized.match(pattern);
+      if (match?.[1]) {
+        const num = parseInt(match[1], 10);
+        if (num >= 1 && num <= 50) return num;
+      }
+    }
+    return null;
   }
 
   private applyClassificationGuards(
     query: string,
     classification: ChatIntentClassification,
+    history?: ClassificationConversationTurn[],
   ): ChatIntentClassification {
     const normalized = this.normalize(query);
+    const extractedLimit = this.extractRequestedLimit(query);
+    if (extractedLimit) {
+      classification = {
+        ...classification,
+        limit: extractedLimit,
+      };
+    }
+
+    if (
+      classification.topic &&
+      [
+        "research",
+        "researcher",
+        "researchers",
+        "people",
+        "faculty",
+        "nghien cuu",
+        "chuyen gia",
+      ].includes(classification.topic.trim().toLowerCase())
+    ) {
+      classification = {
+        ...classification,
+        topic: null,
+      };
+    }
+
+    const asksForListOfResearchers =
+      /\b(\d{1,2}\s+(?:researchers?|research|people|faculty|professors?|nguoi|chuyen\s+gia)|(?:list|give\s+me|show|top|danh\s+sach)\s+(?:of\s+)?\d+\s*(?:researchers?|research|people|nguoi)?)\b/i.test(
+        query,
+      );
+
+    if (
+      asksForListOfResearchers &&
+      history?.length &&
+      (classification.intent === "SEMANTIC_SEARCH" ||
+        classification.intent === "UNSUPPORTED" ||
+        classification.intent === "RESEARCHERS_BY_TOPIC")
+    ) {
+      classification = {
+        ...classification,
+        intent: "RESEARCHERS_BY_TOPIC",
+        retrieval: "DATABASE",
+        semanticQuery: null,
+      };
+    }
     const mentionsPublication = [
       "paper",
       "publication",

@@ -24,6 +24,7 @@ import { ChatToolSelectorService } from "./chat-tool-selector.service";
 import { ChatResponseGeneratorService } from "./chat-response-generator.service";
 import {
   expandResearchTopicTerms,
+  findBestResearchTopicMatch,
   normalizeResearchSearchTerm,
 } from "../../common/research-topic-aliases";
 import {
@@ -360,7 +361,47 @@ export class ChatService {
       "cong trinh do",
       "tom tat lai",
       "noi tiep",
+      "give me more",
+      "show more",
+      "list 30",
+      "list 20",
+      "list 10",
+      "list of",
+      "give me list",
+      "more people",
+      "more researchers",
+      "them nua",
+      "them nguoi",
+      "danh sach",
     ].some((term) => normalized.includes(term));
+  }
+
+  private resolveTopicFromContext(
+    query: string,
+    history: ConversationTurn[],
+  ): string | null {
+    const fromQuery = findBestResearchTopicMatch(query);
+    if (fromQuery) return fromQuery;
+
+    for (let index = history.length - 1; index >= 0; index -= 1) {
+      const turn = history[index];
+      if (!turn) continue;
+
+      const fromPrevQuery = findBestResearchTopicMatch(turn.query);
+      if (fromPrevQuery) return fromPrevQuery;
+
+      const matchInQuotes = turn.response.match(
+        /(?:matching|topic|chủ đề)\s+["“]([^"”]+)["”]/i,
+      );
+      if (matchInQuotes?.[1]) {
+        return matchInQuotes[1].trim();
+      }
+
+      const fromPrevAnswer = findBestResearchTopicMatch(turn.response);
+      if (fromPrevAnswer) return fromPrevAnswer;
+    }
+
+    return null;
   }
 
   private contextualizeRetrievalQuery(
@@ -1190,11 +1231,31 @@ export class ChatService {
 
   private async retrieveResearchersByTopic(
     query: string,
+    history: ConversationTurn[],
     flow: ChatToolSelection,
     requestId = "unary",
   ): Promise<RetrievalResult> {
-    const subject = flow.topic || flow.semanticQuery || query;
-    const terms = expandResearchTopicTerms(subject);
+    let subject = flow.topic || flow.semanticQuery || null;
+    const isGeneric = (val?: string | null) =>
+      !val ||
+      [
+        "research",
+        "researcher",
+        "researchers",
+        "people",
+        "faculty",
+        "professors",
+        "nghien cuu",
+        "chuyen gia",
+        "tac gia",
+      ].includes(val.trim().toLowerCase());
+
+    if (isGeneric(subject)) {
+      const resolved = this.resolveTopicFromContext(query, history);
+      subject = resolved || subject || query;
+    }
+    const topicSubject = subject || query;
+    const terms = expandResearchTopicTerms(topicSubject);
     const topicWhere: Prisma.PaperWhereInput = {
       OR: terms.flatMap((term) => buildTopicPhraseFilters(term, false)),
     };
@@ -1206,58 +1267,84 @@ export class ChatService {
           : [{ displayName: { contains: term } }];
       },
     );
-    const profiles = await this.prisma.researcher.findMany({
+    const matchingTopics = await this.prisma.researcherTopic.findMany({
       where: {
-        authorId: { not: null },
-        topics: { some: { topic: { OR: topicNameMatchers } } },
+        topic: { OR: topicNameMatchers },
+        researcher: { authorId: { not: null } },
       },
       select: {
-        authorId: true,
-        name: true,
-        title: true,
-        department: true,
-        slug: true,
-        topics: {
-          where: { topic: { OR: topicNameMatchers } },
+        worksCount: true,
+        topic: { select: { displayName: true } },
+        researcher: {
           select: {
-            worksCount: true,
-            topic: { select: { displayName: true } },
+            authorId: true,
+            name: true,
+            title: true,
+            department: true,
+            slug: true,
           },
         },
       },
-      take: 50,
+      orderBy: { worksCount: "desc" },
+      take: Math.max(flow.limit * 4, 150),
     });
-    const authorIds = profiles.flatMap(({ authorId }) =>
-      authorId ? [authorId] : [],
-    );
-    const grouped = authorIds.length
+
+    const researcherMap = new Map<
+      string,
+      {
+        name: string;
+        title: string | null;
+        department: string | null;
+        slug: string;
+        authorId: string;
+        matchingTopics: Array<{ name: string; worksCount: number }>;
+        matchingTopicWorks: number;
+        matchingPapers: number;
+      }
+    >();
+
+    for (const item of matchingTopics) {
+      const authorId = item.researcher.authorId;
+      if (!authorId) continue;
+      let entry = researcherMap.get(authorId);
+      if (!entry) {
+        entry = {
+          name: item.researcher.name,
+          title: item.researcher.title,
+          department: item.researcher.department,
+          slug: item.researcher.slug,
+          authorId,
+          matchingTopics: [],
+          matchingTopicWorks: 0,
+          matchingPapers: 0,
+        };
+        researcherMap.set(authorId, entry);
+      }
+      entry.matchingTopics.push({
+        name: item.topic.displayName,
+        worksCount: item.worksCount,
+      });
+      entry.matchingTopicWorks += item.worksCount;
+    }
+
+    const candidateAuthorIds = Array.from(researcherMap.keys());
+    const grouped = candidateAuthorIds.length
       ? await this.prisma.paperAuthor.groupBy({
           by: ["authorId"],
-          where: { authorId: { in: authorIds }, paper: topicWhere },
+          where: { authorId: { in: candidateAuthorIds }, paper: topicWhere },
           _count: { _all: true },
         })
       : [];
+
     const counts = new Map(
       grouped.map((row) => [row.authorId, row._count._all]),
     );
-    const researchers = profiles
-      .map((researcher) => ({
-        name: researcher.name,
-        title: researcher.title,
-        department: researcher.department,
-        slug: researcher.slug,
-        matchingTopics: researcher.topics.map(({ topic, worksCount }) => ({
-          name: topic.displayName,
-          worksCount,
-        })),
-        matchingTopicWorks: researcher.topics.reduce(
-          (sum, topic) => sum + topic.worksCount,
-          0,
-        ),
-        matchingPapers: researcher.authorId
-          ? (counts.get(researcher.authorId) ?? 0)
-          : 0,
-      }))
+
+    for (const entry of researcherMap.values()) {
+      entry.matchingPapers = counts.get(entry.authorId) ?? 0;
+    }
+
+    let researchers = Array.from(researcherMap.values())
       .sort(
         (left, right) =>
           right.matchingTopicWorks - left.matchingTopicWorks ||
@@ -1265,8 +1352,57 @@ export class ChatService {
           left.name.localeCompare(right.name),
       )
       .slice(0, flow.limit);
+
+    if (researchers.length === 0) {
+      const fallbackAuthors = await this.prisma.paperAuthor.groupBy({
+        by: ["authorId"],
+        where: {
+          paper: topicWhere,
+          author: { researcher: { isNot: null } },
+        },
+        _count: { _all: true },
+        orderBy: { _count: { authorId: "desc" } },
+        take: flow.limit,
+      });
+
+      if (fallbackAuthors.length > 0) {
+        const fallbackAuthorIds = fallbackAuthors.map((item) => item.authorId);
+        const fallbackProfiles = await this.prisma.researcher.findMany({
+          where: { authorId: { in: fallbackAuthorIds } },
+          select: {
+            authorId: true,
+            name: true,
+            title: true,
+            department: true,
+            slug: true,
+          },
+        });
+        const paperCountMap = new Map(
+          fallbackAuthors.map((item) => [item.authorId, item._count._all]),
+        );
+        researchers = fallbackProfiles
+          .map((profile) => ({
+            name: profile.name,
+            title: profile.title,
+            department: profile.department,
+            slug: profile.slug,
+            authorId: profile.authorId ?? "",
+            matchingTopics: [],
+            matchingTopicWorks: 0,
+            matchingPapers: profile.authorId
+              ? (paperCountMap.get(profile.authorId) ?? 0)
+              : 0,
+          }))
+          .sort(
+            (a, b) =>
+              b.matchingPapers - a.matchingPapers ||
+              a.name.localeCompare(b.name),
+          );
+      }
+    }
+
     this.trace.log(requestId, "database.researchers_by_topic", {
-      subject,
+      subject: topicSubject,
       terms,
       researchers,
     });
@@ -1274,17 +1410,17 @@ export class ChatService {
       evidence: [],
       facts: researchers.length
         ? [
-            `Researchers with indexed publications matching "${subject}": ${researchers
+            `Researchers with indexed publications matching "${topicSubject}": ${researchers
               .map(
                 (researcher, index) =>
-                  `${index + 1}. ${researcher.name}${researcher.title ? `, ${researcher.title}` : ""}${researcher.department ? ` (${researcher.department})` : ""}: OpenAlex author topic(s)=${researcher.matchingTopics.map((topic) => `${topic.name} (${topic.worksCount} works)`).join(", ")}; ${researcher.matchingPapers} matching locally indexed publication(s); profile slug=${researcher.slug}`,
+                  `${index + 1}. ${researcher.name}${researcher.title ? `, ${researcher.title}` : ""}${researcher.department ? ` (${researcher.department})` : ""}: OpenAlex author topic(s)=${researcher.matchingTopics.length ? researcher.matchingTopics.map((topic) => `${topic.name} (${topic.worksCount} works)`).join(", ") : "None (matched via publications)"}; ${researcher.matchingPapers} matching locally indexed publication(s); profile slug=${researcher.slug}`,
               )
               .join(
                 "; ",
               )}. Researchers are selected and ranked from OpenAlex author topics; local paper matches are supporting evidence only.`,
           ]
         : [
-            `No researcher has a synced OpenAlex author topic matching "${subject}". Do not infer expertise from incidental paper mentions.`,
+            `No researcher has a synced OpenAlex author topic matching "${topicSubject}". Do not infer expertise from incidental paper mentions.`,
           ],
     };
   }
@@ -1793,6 +1929,7 @@ export class ChatService {
       find_researchers_by_topic: async (call) =>
         this.retrieveResearchersByTopic(
           query,
+          history,
           this.flowForTool(flow, call, "RESEARCHERS_BY_TOPIC"),
           requestId,
         ),
@@ -1976,7 +2113,7 @@ export class ChatService {
       return this.retrieveTopPublications(flow, requestId);
     }
     if (flow.intent === "RESEARCHERS_BY_TOPIC") {
-      return this.retrieveResearchersByTopic(query, flow, requestId);
+      return this.retrieveResearchersByTopic(query, history, flow, requestId);
     }
 
     if (route === "STRUCTURED" || route === "HYBRID") {

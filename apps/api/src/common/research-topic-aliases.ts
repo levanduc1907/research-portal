@@ -225,3 +225,25 @@ export function expandResearchTopicTerms(value: string): string[] {
   }
   return [...uniqueTerms.values()].slice(0, 20);
 }
+
+export function findBestResearchTopicMatch(text: string): string | null {
+  const normalizedQuery = normalizeResearchSearchTerm(text);
+  if (!normalizedQuery) return null;
+
+  let bestCanonical: string | null = null;
+  let bestMatchLen = 0;
+
+  for (const group of RESEARCH_TOPIC_ALIAS_GROUPS) {
+    for (const term of [group.canonical, ...group.aliases]) {
+      const normalizedTerm = normalizeResearchSearchTerm(term);
+      if (normalizedTerm && containsTerm(normalizedQuery, normalizedTerm)) {
+        if (normalizedTerm.length > bestMatchLen) {
+          bestMatchLen = normalizedTerm.length;
+          bestCanonical = group.canonical;
+        }
+      }
+    }
+  }
+
+  return bestCanonical;
+}
