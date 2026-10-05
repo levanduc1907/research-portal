@@ -347,6 +347,26 @@ export class OpenAlexImportService {
     return rows.map((row) => row.researcherId);
   }
 
+  async researcherIdsFromCsv(filePath: string): Promise<string[]> {
+    const input = createInterface({
+      input: createReadStream(filePath),
+      crlfDelay: Infinity,
+    });
+    const researcherIds: string[] = [];
+    for await (const line of input) {
+      if (!line.trim()) continue;
+      const firstCell = this.parseDelimitedLine(line, ",")[0]
+        ?.replace(/^\uFEFF/, "")
+        .trim();
+      if (!firstCell || /^(researcher_?id|id)$/i.test(firstCell)) continue;
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(firstCell)) {
+        throw new Error(`Invalid researcher ID in CSV: ${firstCell}`);
+      }
+      researcherIds.push(firstCell);
+    }
+    return [...new Set(researcherIds)];
+  }
+
   async auditResearcherIdentities(outputDirectory?: string): Promise<{
     total: number;
     linked: number;

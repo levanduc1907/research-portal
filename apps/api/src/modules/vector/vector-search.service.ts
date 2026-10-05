@@ -69,18 +69,13 @@ export class VectorSearchService {
     options: VectorSearchOptions = {},
   ): Promise<VectorEvidencePaper[]> {
     const limit = Math.min(Math.max(options.limit ?? 5, 1), 10);
-    this.trace(options.traceId, "vector.input", { query, options, limit });
     const [vector] = await this.embedder.embed([query], "query");
     if (!vector || vector.length !== this.embeddingDimensions) {
       throw new ServiceUnavailableException(
         `Embedding provider returned ${vector?.length ?? 0} dimensions; expected ${this.embeddingDimensions}.`,
       );
     }
-    this.trace(options.traceId, "vector.embedding", {
-      model: this.embeddingModel,
-      dimensions: vector.length,
-      vector,
-    });
+    this.traceSearchInput(options.traceId, query, vector, options);
 
     try {
       const must: Array<Record<string, unknown>> = [];
@@ -105,13 +100,6 @@ export class VectorSearchService {
         });
       }
 
-      this.trace(options.traceId, "vector.qdrant_request", {
-        collection: this.collectionName,
-        limit,
-        scoreThreshold: this.scoreThreshold,
-        filter: must.length ? { must } : null,
-      });
-
       const result = await this.client.query(this.collectionName, {
         query: vector,
         limit,
@@ -119,8 +107,6 @@ export class VectorSearchService {
         score_threshold: this.scoreThreshold,
         ...(must.length ? { filter: { must } } : {}),
       });
-
-      this.trace(options.traceId, "vector.qdrant_raw_response", result);
 
       const papers = result.points.flatMap((point) => {
         const payload = point.payload;
@@ -151,7 +137,6 @@ export class VectorSearchService {
           },
         ];
       });
-      this.trace(options.traceId, "vector.mapped_evidence", { papers });
       return papers;
     } catch (error) {
       throw new ServiceUnavailableException(
@@ -160,19 +145,40 @@ export class VectorSearchService {
     }
   }
 
-  private trace(requestId: string | undefined, step: string, data: unknown) {
+  private traceSearchInput(
+    requestId: string | undefined,
+    query: string,
+    vector: number[],
+    options: VectorSearchOptions,
+  ): void {
     if (!this.traceEnabled || !requestId) return;
+    const divider = "=".repeat(96);
+    const filters = [
+      options.authorName ? `author=${options.authorName}` : null,
+      options.year ? `year=${options.year}` : null,
+      options.yearFrom ? `yearFrom=${options.yearFrom}` : null,
+      options.yearTo ? `yearTo=${options.yearTo}` : null,
+    ]
+      .filter(Boolean)
+      .join(", ");
+    const data = {
+      query,
+      model: this.embeddingModel,
+      vectorDimensions: vector.length,
+      vectorPreview: vector.slice(0, 16),
+      filters: filters || null,
+    };
     this.logger.log(
-      `[AI_FLOW]\n${JSON.stringify(
-        {
-          timestamp: new Date().toISOString(),
-          requestId,
-          step,
-          data,
-        },
-        null,
-        2,
-      )}`,
+      [
+        "",
+        divider,
+        ">>> STEP 2 - SEARCH QUERY AND EMBEDDING VECTOR <<<",
+        divider,
+        `REQUEST ID: ${requestId}`,
+        "",
+        JSON.stringify(data, null, 2),
+        divider,
+      ].join("\n"),
     );
   }
 }

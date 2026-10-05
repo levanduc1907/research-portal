@@ -157,7 +157,7 @@ export class AiCredentialsService {
     prompt: string,
     onToken: (token: string) => void,
     signal?: AbortSignal,
-    traceContext?: AiTraceContext,
+    _traceContext?: AiTraceContext,
   ): Promise<boolean> {
     if (this.circuitOpenUntil > Date.now()) {
       throw new ServiceUnavailableException(
@@ -168,39 +168,14 @@ export class AiCredentialsService {
       where: { isActive: true },
       orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
     });
-    this.traceProvider(traceContext, "provider.candidates", {
-      candidates: credentials.map((credential) => ({
-        id: credential.id,
-        name: credential.name,
-        provider: credential.provider,
-        model: credential.defaultModel,
-        baseUrl: credential.baseUrl,
-        isDefault: credential.isDefault,
-        coolingDown: this.isCredentialCoolingDown(credential.id),
-      })),
-    });
-
     let lastError: Error | null = null;
     for (const credential of credentials) {
       if (this.isCredentialCoolingDown(credential.id)) {
-        this.traceProvider(traceContext, "provider.skipped", {
-          credentialId: credential.id,
-          name: credential.name,
-          reason: "cooldown",
-        });
         continue;
       }
 
       let emittedToken = false;
-      let emittedCharacters = 0;
       try {
-        this.traceProvider(traceContext, "provider.attempt", {
-          credentialId: credential.id,
-          name: credential.name,
-          provider: credential.provider,
-          model: credential.defaultModel,
-          baseUrl: credential.baseUrl,
-        });
         await this.streamWithProtection(
           this.adapters.get(credential.provider as AiProvider),
           {
@@ -215,19 +190,11 @@ export class AiCredentialsService {
           prompt,
           (token) => {
             emittedToken = true;
-            emittedCharacters += token.length;
             onToken(token);
           },
           signal,
         );
         this.credentialCooldowns.delete(credential.id);
-        this.traceProvider(traceContext, "provider.success", {
-          credentialId: credential.id,
-          name: credential.name,
-          provider: credential.provider,
-          model: credential.defaultModel,
-          emittedCharacters,
-        });
         return true;
       } catch (reason) {
         const error =
@@ -245,15 +212,6 @@ export class AiCredentialsService {
           );
         }
 
-        this.traceProvider(traceContext, "provider.failure", {
-          credentialId: credential.id,
-          name: credential.name,
-          provider: credential.provider,
-          model: credential.defaultModel,
-          emittedToken,
-          canFallback,
-          error: this.safeErrorMessage(error.message),
-        });
         if (emittedToken || !canFallback) throw error;
         lastError = error;
       }
@@ -266,10 +224,6 @@ export class AiCredentialsService {
         this.credentialMatchesApiKey(credential, geminiKey),
       );
     if (geminiKey && !geminiKeyAlreadyConfigured) {
-      this.traceProvider(traceContext, "provider.env_fallback_attempt", {
-        provider: "GEMINI",
-        model: this.config.get("GEMINI_CHAT_MODEL", "gemini-flash-latest"),
-      });
       await this.streamWithProtection(
         this.adapters.get("GEMINI"),
         {
@@ -281,9 +235,6 @@ export class AiCredentialsService {
         onToken,
         signal,
       );
-      this.traceProvider(traceContext, "provider.env_fallback_success", {
-        provider: "GEMINI",
-      });
       return true;
     }
 
@@ -371,32 +322,6 @@ export class AiCredentialsService {
       .replace(/AQ\.[A-Za-z0-9_-]{12,}/g, "[REDACTED_GEMINI_KEY]")
       .replace(/[\r\n]/g, " ")
       .slice(0, 160);
-  }
-
-  private traceProvider(
-    context: AiTraceContext | undefined,
-    step: string,
-    data: Record<string, unknown>,
-  ): void {
-    if (
-      !context ||
-      this.config.get<string>("CHAT_TRACE_ENABLED", "false") !== "true"
-    ) {
-      return;
-    }
-    this.logger.log(
-      `[AI_FLOW]\n${JSON.stringify(
-        {
-          timestamp: new Date().toISOString(),
-          requestId: context.requestId,
-          step,
-          purpose: context.purpose,
-          data,
-        },
-        null,
-        2,
-      )}`,
-    );
   }
 
   private async streamWithProtection(

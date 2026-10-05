@@ -49,26 +49,13 @@ export class ChatResponseGeneratorService {
     signal?: AbortSignal,
     onToken?: (token: string) => void,
   ): Promise<string> {
-    const startedAt = Date.now();
-    this.trace.log(requestId, "response_generation.input", {
-      query,
-      history,
-      facts,
-      evidence,
-    });
     const prompt = this.buildPrompt(query, evidence, history, facts);
-    this.trace.log(requestId, "response_generation.prompt", { prompt });
+    this.trace.log(requestId, "STEP4_GENERATION_COMMAND", { prompt });
     let answer = "";
     const usedProvider = await this.aiCredentials.streamDefault(
       prompt,
       (token) => {
         answer += token;
-        if (this.trace.tokensEnabled()) {
-          this.trace.log(requestId, "response_generation.token", {
-            chunk: token,
-            accumulatedAnswer: answer,
-          });
-        }
         onToken?.(token);
       },
       signal,
@@ -79,10 +66,8 @@ export class ChatResponseGeneratorService {
         "No default AI credential is configured. Add one in AI provider settings first.",
       );
     }
-    this.trace.log(requestId, "response_generation.completed", {
+    this.trace.log(requestId, "STEP4_GENERATION_RESULT", {
       answer,
-      characterCount: answer.length,
-      latencyMs: Date.now() - startedAt,
     });
     return answer;
   }

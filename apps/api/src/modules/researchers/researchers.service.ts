@@ -118,6 +118,8 @@ const FALLBACK_RESEARCHERS: ResearcherDto[] = [
   },
 ];
 
+const RESEARCHER_LIST_TOPIC_LIMIT = 3;
+
 @Injectable()
 export class ResearchersService {
   constructor(private readonly prisma: PrismaService) {}
@@ -128,6 +130,16 @@ export class ResearchersService {
       : /^A\d+$/i.test(id)
         ? `https://openalex.org/${id.toUpperCase()}`
         : id;
+
+    // Public profile links always use the unique slug. Avoid an OR across the
+    // researcher and author tables for that overwhelmingly common path.
+    if (!id.startsWith("https://openalex.org/") && !/^A\d+$/i.test(id)) {
+      const isUuid =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          id,
+        );
+      if (!isUuid) return { slug: id };
+    }
 
     return {
       OR: [
@@ -223,12 +235,26 @@ export class ResearchersService {
           skip,
           take: limit,
           orderBy: { citedByCount: "desc" },
-          include: {
+          select: {
+            id: true,
+            slug: true,
+            openalexId: true,
+            name: true,
+            email: true,
+            department: true,
+            title: true,
+            bio: true,
+            profileUrl: true,
+            photoUrl: true,
+            worksCount: true,
+            citedByCount: true,
             topics: {
               orderBy: { rank: "asc" },
-              include: { topic: true },
+              take: RESEARCHER_LIST_TOPIC_LIMIT,
+              select: { topic: { select: { displayName: true } } },
             },
-            author: true,
+            author: { select: { openalexId: true } },
+            _count: { select: { topics: true } },
           },
         }),
       ]);
@@ -251,6 +277,7 @@ export class ResearchersService {
         worksCount: r.worksCount,
         citedByCount: r.citedByCount,
         keywords: r.topics.map(({ topic }) => topic.displayName),
+        topicCount: r._count.topics,
       }));
 
       const totalPages = Math.ceil(total / limit);
@@ -298,12 +325,25 @@ export class ResearchersService {
     try {
       const record = await this.prisma.researcher.findFirst({
         where: this.lookupWhere(id),
-        include: {
+        select: {
+          id: true,
+          slug: true,
+          authorId: true,
+          openalexId: true,
+          name: true,
+          email: true,
+          department: true,
+          title: true,
+          bio: true,
+          profileUrl: true,
+          photoUrl: true,
+          worksCount: true,
+          citedByCount: true,
           topics: {
             orderBy: { rank: "asc" },
-            include: { topic: true },
+            select: { topic: { select: { displayName: true } } },
           },
-          author: true,
+          author: { select: { openalexId: true } },
         },
       });
 
@@ -314,20 +354,6 @@ export class ResearchersService {
         if (fallback) return fallback;
         throw new NotFoundException(`Researcher ${id} not found`);
       }
-
-      const linkedStats = record.authorId
-        ? await Promise.all([
-            this.prisma.paperAuthor.count({
-              where: { authorId: record.authorId },
-            }),
-            this.prisma.paper.aggregate({
-              where: { authors: { some: { authorId: record.authorId } } },
-              _sum: { citedByCount: true },
-            }),
-          ])
-        : null;
-      const linkedWorksCount = linkedStats?.[0] ?? 0;
-      const linkedCitations = linkedStats?.[1]._sum.citedByCount ?? 0;
 
       return {
         id: record.id,
@@ -340,9 +366,10 @@ export class ResearchersService {
         bio: record.bio,
         profileUrl: record.profileUrl,
         photoUrl: record.photoUrl,
-        worksCount: Math.max(record.worksCount, linkedWorksCount),
-        citedByCount: Math.max(record.citedByCount, linkedCitations),
+        worksCount: record.worksCount,
+        citedByCount: record.citedByCount,
         keywords: record.topics.map(({ topic }) => topic.displayName),
+        topicCount: record.topics.length,
       };
     } catch (e: any) {
       if (e instanceof NotFoundException) throw e;

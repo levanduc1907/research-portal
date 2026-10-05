@@ -5,17 +5,13 @@ import {
   ChatToolSelection,
   toolCallsForClassification,
 } from "./chat-intent-classification";
-import { ChatTraceService } from "./chat-trace.service";
 
 @Injectable()
 export class ChatToolSelectorService {
-  constructor(private readonly trace: ChatTraceService) {}
-
   select(
     classification: ChatIntentClassification,
-    requestId = "unary",
+    _requestId = "unary",
   ): ChatToolSelection {
-    this.trace.log(requestId, "tool_selection.input", { classification });
     const toolCalls = toolCallsForClassification(classification);
     const route = this.resolveRoute(classification, toolCalls);
     const selection: ChatToolSelection = {
@@ -23,16 +19,6 @@ export class ChatToolSelectorService {
       toolCalls,
       route,
     };
-    this.trace.log(requestId, "tool_selection.completed", {
-      intent: classification.intent,
-      secondaryIntents: classification.secondaryIntents,
-      route,
-      toolCalls: toolCalls.map((call) => ({
-        callId: call.id,
-        tool: call.name,
-        arguments: call.arguments,
-      })),
-    });
     return selection;
   }
 

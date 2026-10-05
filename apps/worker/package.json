@@ -17,6 +17,7 @@
     "audit:researcher-identities": "nest start -- audit-researcher-identities",
     "apply:researcher-identity-review": "nest start -- apply-researcher-identity-review",
     "backfill:reviewed-researcher-papers": "nest start -- backfill-reviewed-researcher-papers",
+    "backfill:researcher-papers:csv": "nest start -- backfill-researcher-papers-csv",
     "backfill:researcher-papers": "nest start -- backfill-researcher-papers",
     "backfill:researcher-departments": "nest start -- backfill-researcher-departments",
     "sync:vectors": "nest start -- sync-vectors",

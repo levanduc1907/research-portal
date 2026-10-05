@@ -94,6 +94,8 @@ export interface ResearcherDto {
   worksCount: number;
   citedByCount: number;
   keywords: string[];
+  /** Total topics available. List responses may only include a small preview. */
+  topicCount?: number;
 }
 
 export interface ResearcherPaperDto {

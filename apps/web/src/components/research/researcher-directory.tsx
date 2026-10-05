@@ -143,8 +143,8 @@ export function ResearcherDirectory(): React.JSX.Element {
                     {r.keywords.slice(0, 3).map((k) => (
                       <span key={k}>{k}</span>
                     ))}
-                    {r.keywords.length > 3 && (
-                      <span>+{r.keywords.length - 3}</span>
+                    {(r.topicCount ?? r.keywords.length) > 3 && (
+                      <span>+{(r.topicCount ?? r.keywords.length) - 3}</span>
                     )}
                   </div>
                   <span className="profile-link">
@@ -156,7 +156,10 @@ export function ResearcherDirectory(): React.JSX.Element {
           </div>
         ) : researchersQuery.isFetching ? (
           <div className="researcher-grid-wrapper">
-            <div className="researcher-grid-loading" style={{ position: "relative", minHeight: 300 }}>
+            <div
+              className="researcher-grid-loading"
+              style={{ position: "relative", minHeight: 300 }}
+            >
               <div className="loading-spinner" />
             </div>
           </div>

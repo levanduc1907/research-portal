@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import {
   ChatCitationDto,
@@ -134,8 +134,6 @@ function buildTopicPhraseFilters(
 
 @Injectable()
 export class ChatService {
-  private readonly logger = new Logger(ChatService.name);
-
   constructor(
     private readonly prisma: PrismaService,
     private readonly vectorSearch: VectorSearchService,
@@ -2252,6 +2250,35 @@ export class ChatService {
     );
     const selection = this.toolSelector.select(classification, requestId);
     const route = selection.route;
+    this.trace.log(requestId, "STEP1_CLASSIFICATION_RESULT", {
+      intent: classification.intent,
+      route: selection.route,
+      retrieval: classification.retrieval,
+      entitiesAndFilters: {
+        authorName: classification.authorName,
+        paperTitle: classification.paperTitle,
+        topic: classification.topic,
+        department: classification.department,
+        semanticQuery: classification.semanticQuery,
+        year: classification.year,
+        yearFrom: classification.yearFrom,
+        yearTo: classification.yearTo,
+        sort: classification.sort,
+        limit: classification.limit,
+      },
+      nextTools: selection.toolCalls.map((call) => ({
+        name: call.name,
+        arguments: call.arguments,
+      })),
+    });
+    if (route === "STRUCTURED" || route === "UNSUPPORTED") {
+      this.trace.log(requestId, "STEP2_RETRIEVAL_INPUT", {
+        route,
+        query: this.buildRetrievalQuery(dto.query, selection),
+        embeddingVector: null,
+        note: "Embedding is not required for this route.",
+      });
+    }
     const { evidence, facts } = await this.retrieveEvidence(
       route,
       dto.query,
@@ -2260,11 +2287,18 @@ export class ChatService {
       requestId,
     );
     const retrievedSources = this.toSources(evidence);
-    this.trace.log(requestId, "retrieval.completed", {
+    this.trace.log(requestId, "STEP3_RETRIEVED_DATA", {
       route,
-      evidence,
+      evidence: evidence.map((paper) => ({
+        id: paper.id,
+        title: paper.title,
+        year: paper.publicationYear,
+        citations: paper.citedByCount,
+        topic: paper.primaryTopic,
+        doi: paper.doi,
+        score: paper.score,
+      })),
       facts,
-      sources: retrievedSources,
     });
     if (route === "UNSUPPORTED") {
       const answer = this.responseGenerator.unsupportedAnswer(dto.query);
@@ -2329,7 +2363,6 @@ export class ChatService {
     let route: ChatRoute | undefined;
     let stage: ChatStage = "classification";
 
-    this.logger.log(`Chat stream started requestId=${requestId}`);
     this.trace.log(requestId, "request.received", {
       transport: "sse",
       query: dto.query,
@@ -2373,13 +2406,39 @@ export class ChatService {
       const selectionStartedAt = Date.now();
       const selection = this.toolSelector.select(classification, requestId);
       route = selection.route;
+      this.trace.log(requestId, "STEP1_CLASSIFICATION_RESULT", {
+        intent: classification.intent,
+        route: selection.route,
+        retrieval: classification.retrieval,
+        entitiesAndFilters: {
+          authorName: classification.authorName,
+          paperTitle: classification.paperTitle,
+          topic: classification.topic,
+          department: classification.department,
+          semanticQuery: classification.semanticQuery,
+          year: classification.year,
+          yearFrom: classification.yearFrom,
+          yearTo: classification.yearTo,
+          sort: classification.sort,
+          limit: classification.limit,
+        },
+        nextTools: selection.toolCalls.map((call) => ({
+          name: call.name,
+          arguments: call.arguments,
+        })),
+      });
+      if (route === "STRUCTURED" || route === "UNSUPPORTED") {
+        this.trace.log(requestId, "STEP2_RETRIEVAL_INPUT", {
+          route,
+          query: this.buildRetrievalQuery(dto.query, selection),
+          embeddingVector: null,
+          note: "Embedding is not required for this route.",
+        });
+      }
       this.trace.log(requestId, "pipeline.tool_selection.output", {
         selection,
         latencyMs: Date.now() - selectionStartedAt,
       });
-      this.logger.log(
-        `Chat tool selection requestId=${requestId} intent=${classification.intent} tools=${selection.toolCalls.map((call) => call.name).join(",")} route=${route}`,
-      );
       stage = "tool_calling";
       const retrievalStartedAt = Date.now();
       this.trace.log(requestId, "pipeline.tool_calling.input", {
@@ -2396,11 +2455,18 @@ export class ChatService {
       );
       if (signal?.aborted) return;
       const retrievedSources = this.toSources(evidence);
-      this.trace.log(requestId, "retrieval.completed", {
+      this.trace.log(requestId, "STEP3_RETRIEVED_DATA", {
         route,
-        evidence,
+        evidence: evidence.map((paper) => ({
+          id: paper.id,
+          title: paper.title,
+          year: paper.publicationYear,
+          citations: paper.citedByCount,
+          topic: paper.primaryTopic,
+          doi: paper.doi,
+          score: paper.score,
+        })),
         facts,
-        sources: retrievedSources,
       });
       this.trace.log(requestId, "pipeline.tool_calling.output", {
         evidence,
@@ -2431,9 +2497,6 @@ export class ChatService {
           startTime,
           requestId,
           conversationId,
-        );
-        this.logger.log(
-          `Chat stream completed requestId=${requestId} route=${route} sources=0 latencyMs=${Date.now() - startTime}`,
         );
         this.trace.log(requestId, "pipeline.completed", {
           query: dto.query,
@@ -2491,9 +2554,6 @@ export class ChatService {
         requestId,
         conversationId,
       );
-      this.logger.log(
-        `Chat stream completed requestId=${requestId} route=${route} sources=${sources.length} latencyMs=${Date.now() - startTime}`,
-      );
       this.trace.log(requestId, "pipeline.completed", {
         query: dto.query,
         route,
@@ -2508,10 +2568,6 @@ export class ChatService {
         const normalizedError =
           error instanceof Error ? error : new Error("Unknown chat error");
         const clientError = this.toClientError(normalizedError, stage);
-        this.logger.error(
-          `Chat stream failed requestId=${requestId} stage=${stage} route=${route ?? "UNKNOWN"} latencyMs=${Date.now() - startTime}: ${normalizedError.message}`,
-          normalizedError.stack,
-        );
         this.trace.log(requestId, "request.failed", {
           stage,
           route,
@@ -2622,13 +2678,8 @@ export class ChatService {
       this.trace.log(requestId ?? "unary", "persistence.chat_request_saved", {
         record,
       });
-    } catch (error) {
+    } catch {
       // Logging must not break a successful response.
-      const message =
-        error instanceof Error ? error.message : "Unknown database error";
-      this.logger.warn(
-        `Chat history write failed requestId=${requestId ?? "unary"}: ${message}`,
-      );
     }
   }
 }

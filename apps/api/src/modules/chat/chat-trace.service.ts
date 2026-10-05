@@ -1,6 +1,26 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 
+const AI_FLOW_LOG_STEPS = new Set([
+  "AI_CLASSIFICATION_COMMAND",
+  "STEP1_CLASSIFICATION_RESULT",
+  "STEP2_RETRIEVAL_INPUT",
+  "STEP3_RETRIEVED_DATA",
+  "STEP4_GENERATION_COMMAND",
+  "STEP4_GENERATION_RESULT",
+]);
+
+const STEP_TITLES: Record<string, string> = {
+  AI_CLASSIFICATION_COMMAND: "STEP 1 - INTENT CLASSIFICATION - AI COMMAND",
+  STEP1_CLASSIFICATION_RESULT: "STEP 1 - CLASSIFICATION RESULT",
+  STEP2_RETRIEVAL_INPUT: "STEP 2 - SEARCH QUERY AND EMBEDDING VECTOR",
+  STEP3_RETRIEVED_DATA: "STEP 3 - DATA PROVIDED TO THE AI",
+  STEP4_GENERATION_COMMAND: "STEP 4 - ANSWER GENERATION COMMAND",
+  STEP4_GENERATION_RESULT: "STEP 4 - FINAL ANSWER",
+};
+
+const DIVIDER = "=".repeat(96);
+
 @Injectable()
 export class ChatTraceService {
   private readonly logger = new Logger("AiFlowTrace");
@@ -19,14 +39,18 @@ export class ChatTraceService {
   }
 
   log(requestId: string, step: string, data: unknown): void {
-    if (!this.enabled()) return;
-    const payload = {
-      timestamp: new Date().toISOString(),
-      requestId,
-      step,
-      data: this.sanitize(data),
-    };
-    const serialized = JSON.stringify(payload, null, 2);
+    if (!this.enabled() || !AI_FLOW_LOG_STEPS.has(step)) return;
+    const content = JSON.stringify(this.sanitize(data), null, 2);
+    const message = [
+      "",
+      DIVIDER,
+      `>>> ${STEP_TITLES[step]} <<<`,
+      DIVIDER,
+      `REQUEST ID: ${requestId}`,
+      "",
+      content,
+      DIVIDER,
+    ].join("\n");
     const configuredMax = Number(
       this.config.get<string>("CHAT_TRACE_MAX_CHARS"),
     );
@@ -35,9 +59,9 @@ export class ChatTraceService {
         ? configuredMax
         : 100_000;
     this.logger.log(
-      serialized.length <= maxChars
-        ? `[AI_FLOW]\n${serialized}`
-        : `[AI_FLOW]\n${serialized.slice(0, maxChars)}\n... [TRACE TRUNCATED: ${serialized.length - maxChars} chars]`,
+      message.length <= maxChars
+        ? message
+        : `${message.slice(0, maxChars)}\n... [TRUNCATED ${message.length - maxChars} CHARACTERS]`,
     );
   }
 

@@ -24,6 +24,7 @@ async function bootstrap() {
     command === "audit-researcher-identities" ||
     command === "apply-researcher-identity-review" ||
     command === "backfill-reviewed-researcher-papers" ||
+    command === "backfill-researcher-papers-csv" ||
     command === "backfill-researcher-papers" ||
     command === "backfill-researcher-departments" ||
     command === "sync-vectors"
@@ -139,6 +140,29 @@ async function bootstrap() {
       });
       logger.log(
         `Reviewed researcher paper backfill finished: ${result.researchersProcessed}/${researcherIds.length} researchers, ${result.totalImported} works persisted, ${result.unresolved} unresolved`,
+      );
+      failed ||= result.status === "FAILED";
+    }
+    if (command === "backfill-researcher-papers-csv") {
+      const filePath = process.argv
+        .slice(3)
+        .find((arg) => arg !== "--" && !arg.startsWith("-"));
+      if (!filePath) {
+        throw new Error(
+          "Usage: pnpm --filter worker backfill:researcher-papers:csv -- /path/to/researchers.csv",
+        );
+      }
+      const researcherIds = await importer.researcherIdsFromCsv(
+        resolve(process.env.INIT_CWD || process.cwd(), filePath),
+      );
+      const result = await importer.runResearcherPaperBackfill({
+        researcherIds,
+        perPage: 100,
+        resume: !process.argv.includes("--restart"),
+        trustLinkedIdentity: true,
+      });
+      logger.log(
+        `CSV researcher paper backfill finished: ${result.researchersProcessed}/${researcherIds.length} researchers, ${result.totalImported} works persisted, ${result.unresolved} unresolved`,
       );
       failed ||= result.status === "FAILED";
     }

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { AiCredentialsService } from "../ai-providers/ai-credentials.service";
 import {
@@ -20,8 +20,6 @@ export interface ClassificationConversationTurn {
 
 @Injectable()
 export class ChatIntentClassifierService {
-  private readonly logger = new Logger(ChatIntentClassifierService.name);
-
   constructor(
     private readonly aiCredentials: AiCredentialsService,
     private readonly config: ConfigService,
@@ -34,17 +32,8 @@ export class ChatIntentClassifierService {
     signal?: AbortSignal,
     requestId = "unary",
   ): Promise<ChatIntentClassification> {
-    this.trace.log(requestId, "intent_classification.input", {
-      query,
-      history,
-    });
     if (query.trim().length < 4) {
-      const classification = this.fallbackClassification(query);
-      this.trace.log(requestId, "intent_classification.fallback", {
-        reason: "query_too_short",
-        classification,
-      });
-      return classification;
+      return this.fallbackClassification(query);
     }
 
     try {
@@ -60,7 +49,7 @@ export class ChatIntentClassifierService {
         ? AbortSignal.any([signal, timeoutSignal])
         : timeoutSignal;
       const prompt = this.buildPrompt(query, history);
-      this.trace.log(requestId, "intent_classification.prompt", {
+      this.trace.log(requestId, "AI_CLASSIFICATION_COMMAND", {
         prompt,
         timeoutMs,
       });
@@ -69,7 +58,6 @@ export class ChatIntentClassifierService {
         classificationSignal,
         { requestId, purpose: "classification" },
       );
-      this.trace.log(requestId, "intent_classification.raw_output", { output });
       if (output) {
         const classification = parseIntentClassification(output);
         if (classification) {
@@ -78,27 +66,11 @@ export class ChatIntentClassifierService {
             classification,
             history,
           );
-          this.trace.log(requestId, "intent_classification.completed", {
-            source: "ai",
-            classification: guardedClassification,
-          });
           return guardedClassification;
         }
-        this.logger.warn(
-          "AI intent classifier returned invalid JSON; using fallback classification",
-        );
-        this.trace.log(requestId, "intent_classification.validation_failed", {
-          output,
-        });
       }
     } catch (error) {
       if (signal?.aborted) throw error;
-      this.logger.warn(
-        `AI intent classifier unavailable; using fallback classification: ${this.safeError(error)}`,
-      );
-      this.trace.log(requestId, "intent_classification.provider_failed", {
-        error: this.safeError(error),
-      });
     }
 
     const classification = this.applyClassificationGuards(
@@ -106,10 +78,6 @@ export class ChatIntentClassifierService {
       this.fallbackClassification(query),
       history,
     );
-    this.trace.log(requestId, "intent_classification.fallback", {
-      reason: "provider_or_validation_failure",
-      classification,
-    });
     return classification;
   }
 
@@ -511,7 +479,7 @@ export class ChatIntentClassifierService {
                 ))
             ? "CITATIONS_DESC"
             : null,
-      limit: isLatest ? 1 : this.extractRequestedLimit(query) ?? 5,
+      limit: isLatest ? 1 : (this.extractRequestedLimit(query) ?? 5),
     };
   }
 
@@ -701,10 +669,5 @@ export class ChatIntentClassifierService {
       .replace(/[^a-z0-9]+/gi, " ")
       .trim()
       .toLowerCase();
-  }
-
-  private safeError(error: unknown): string {
-    const message = error instanceof Error ? error.message : "unknown error";
-    return message.replace(/[\r\n]/g, " ").slice(0, 160);
   }
 }
